@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.security_event import SecurityEvent
+from app.models.audit_log import AuditLog
 from app.schemas.security_event import (
     SecurityEventCreate,
     SecurityEventResponse,
@@ -95,7 +96,20 @@ def update_event_status(
             detail="Security event not found",
         )
 
+    previous_status = event.status
+
+    if previous_status == new_status:
+        return event
+
     event.status = new_status
+
+    audit_log = AuditLog(
+        event_id=event.event_id,
+        previous_status=previous_status,
+        new_status=new_status,
+        actor="system",
+    )
+    db.add(audit_log)
 
     try:
         db.commit()
