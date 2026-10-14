@@ -1130,6 +1130,9 @@ function IncidentsPage({
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState("");
   const [statusSuccess, setStatusSuccess] = useState("");
+  const [severityFilter, setSeverityFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [sourceFilter, setSourceFilter] = useState("ALL");
 
   const incidentEvents = events.map((event) => {
     const rawType = event.event_type || "Security event";
@@ -1155,6 +1158,30 @@ function IncidentsPage({
       description: event.description || "No description provided.",
       time: reportedTime,
     };
+  });
+
+  const countByStatus = (status) =>
+    incidentEvents.filter(
+      (incident) => incident.status.toUpperCase() === status
+    ).length;
+
+  const availableSources = [
+    ...new Set(incidentEvents.map((incident) => incident.source)),
+  ].sort();
+
+  const filteredIncidents = incidentEvents.filter((incident) => {
+    const matchesSeverity =
+      severityFilter === "ALL" ||
+      incident.severity.toUpperCase() === severityFilter;
+
+    const matchesStatus =
+      statusFilter === "ALL" ||
+      incident.status.toUpperCase() === statusFilter;
+
+    const matchesSource =
+      sourceFilter === "ALL" || incident.source === sourceFilter;
+
+    return matchesSeverity && matchesStatus && matchesSource;
   });
 
   return (
@@ -1286,8 +1313,73 @@ function IncidentsPage({
               : "No security events have been returned by the backend yet."}
           </p>
 
+          <div className="metrics-grid">
+            {[
+              { label: "OPEN", value: countByStatus("OPEN") },
+              { label: "INVESTIGATING", value: countByStatus("INVESTIGATING") },
+              { label: "RESOLVED", value: countByStatus("RESOLVED") },
+              { label: "FALSE POSITIVE", value: countByStatus("FALSE_POSITIVE") },
+            ].map((metric) => (
+              <div className="metric-card" key={metric.label}>
+                <div className="metric-top">{metric.label}</div>
+                <div className="metric-value">{metric.value}</div>
+                <div className="metric-bottom">Security incidents</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="incident-filters">
+            <label className="incident-filter">
+              Severity
+              <select
+                value={severityFilter}
+                onChange={(event) => setSeverityFilter(event.target.value)}
+              >
+                <option value="ALL">All severities</option>
+                {[...new Set(incidentEvents.map((item) => item.severity.toUpperCase()))]
+                  .sort()
+                  .map((severity) => (
+                    <option key={severity} value={severity}>{severity}</option>
+                  ))}
+              </select>
+            </label>
+
+            <label className="incident-filter">
+              Status
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option value="ALL">All statuses</option>
+                <option value="OPEN">OPEN</option>
+                <option value="INVESTIGATING">INVESTIGATING</option>
+                <option value="RESOLVED">RESOLVED</option>
+                <option value="FALSE_POSITIVE">FALSE_POSITIVE</option>
+              </select>
+            </label>
+
+            <label className="incident-filter">
+              Source
+              <select
+                value={sourceFilter}
+                onChange={(event) => setSourceFilter(event.target.value)}
+              >
+                <option value="ALL">All sources</option>
+                {availableSources.map((source) => (
+                  <option key={source} value={source}>{source}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <p>
+            Showing {filteredIncidents.length} of {incidentEvents.length} incidents.
+          </p>
+
           <div className="incident-list">
-            {incidentEvents.map((incident) => (
+            {filteredIncidents.length === 0 ? (
+              <p>No incidents match the selected filters.</p>
+            ) : filteredIncidents.map((incident) => (
               <button
                 key={incident.id}
                 type="button"

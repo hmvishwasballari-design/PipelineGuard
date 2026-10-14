@@ -2667,3 +2667,35 @@ input::selection {
     padding: 16px;
   }
 }
+
+/* PipelineGuard incident filters */
+.incident-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.incident-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: inherit;
+}
+
+.incident-filter select {
+  width: 100%;
+  padding: 11px 12px;
+  background: var(--panel-background, #171717);
+  color: inherit;
+  border: 1px solid var(--border-color, #303030);
+  border-radius: 8px;
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .incident-filters {
+    grid-template-columns: 1fr;
+  }
+}
