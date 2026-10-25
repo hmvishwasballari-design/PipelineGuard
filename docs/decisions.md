@@ -63,3 +63,9 @@ This document records conservative, secure architectural decisions made during t
   - Verified editable installation `pip install -e . --no-deps` and verified both CLI command aliases.
   - Executed dogfood self-scan on `.github/workflows/pipelineguard-ci.yml`, confirming 0 findings detected (clean gate).
 - **Security Rationale**: Ensures standard packaging hygiene, eliminates runtime module path confusion, and verifies zero false positives on compliant CI pipelines.
+
+## Decision 9: Pyrefly IDE Diagnostic Configuration for Bundled Typeshed Stubs
+- **Context**: Pyrefly (the IDE's Python language server) bundles third-party typeshed stubs out of the box (e.g. for `yaml`). When running in workspace environments without environment-specific hardcoded interpreter paths, Pyrefly flagged `missing-source-for-stubs` because stub definitions exist within Pyrefly while the runtime interpreter discovery is deferred.
+- **Decision**: Added `[tool.pyrefly]` and `[tool.pyrefly.errors]` with `missing-source = "ignore"` and `missing-source-for-stubs = "ignore"` to `pyproject.toml`.
+- **Security Rationale**: Eliminates IDE false-positive diagnostics in a cross-platform manner without committing machine-specific interpreter paths to repository configuration.
+
