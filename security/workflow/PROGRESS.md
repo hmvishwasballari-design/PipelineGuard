@@ -128,3 +128,12 @@
     - [x] Stage 5: Full test suite `pytest` with coverage gate - PASSED (359/359 passed, 98.18% overall coverage, all modules >= 95%)
   - [x] Git branch pushed cleanly to `origin/feature/workflow-detection`
   - [x] GitHub Actions CI workflow fully passing end-to-end (see CI status)
+- [x] **Step 11: Production-Readiness Audit (Phases 0–6)**
+  - [x] **Phase 0: Baseline Audit**: Captured initial metrics (359 tests, 98.18% coverage, zero warnings).
+  - [x] **Phase 1: Hardcoding Audit**: Centralized constants (`constants.py`), resource budgets (`limits.py`), strongly-typed exit codes (`ExitCode(IntEnum)`), ratio-based performance benchmark, CLI sanitized error handling. (Commit `4c36fab`)
+  - [x] **Phase 2: Code Quality & Complexity**: Added PEP 561 markers (`py.typed`), declared explicit `__all__` across all modules, reduced cyclomatic complexity across entire package to <= 10 (`ruff check security --select C901` clean). (Commit `9e760d0`)
+  - [x] **Phase 3: Security & Correctness**: Hardened path traversal/symlink defenses for `--baseline` and `--output`, vendored official OASIS SARIF 2.1.0 JSON Schema offline and validated emitted SARIF against schema (`jsonschema`). (Commit `8726fb2`)
+  - [x] **Phase 4: Test Quality & Mutation Sanity Check**: Verified test suite sensitivity by executing 5 manual mutation tests across 5 subsystems (parser, injection, permissions, supply chain, risk scoring); all 5 mutations caught and killed immediately. (Commit `b63660f`)
+  - [x] **Phase 5: Packaging & CI Hygiene**: Added console entrypoints (`pipelineguard` and `pipelineguard-workflow`), configured wheel package data, verified editable installation and dogfood self-scan. (Commit `13e067e`)
+  - [x] **Phase 6: Final Verification**: Executed unified quality gate (`scripts/check.ps1`): 362/362 tests passing, 98.41% coverage, 0 warnings with `-W error`, clean ruff/mypy/bandit/pip-audit.
+
