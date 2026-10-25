@@ -8,9 +8,30 @@ version = "1.0.0"
 description = "CI/CD Pipeline Security Gate and Workflow Analyzer"
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "PipelineGuard Security Team" }]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Topic :: Security",
+    "Topic :: Software Development :: Build Tools",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
 dependencies = [
     "PyYAML==6.0.3",
 ]
+
+[project.scripts]
+pipelineguard = "security.workflow.__main__:main"
+pipelineguard-workflow = "security.workflow.__main__:main"
+
+[tool.setuptools.package-data]
+"security" = ["py.typed"]
+"security.workflow" = ["py.typed", "schemas/*.json"]
 
 [project.optional-dependencies]
 dev = [

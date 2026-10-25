@@ -54,3 +54,12 @@ This document records conservative, secure architectural decisions made during t
   4. *Supply Chain Detector* (`supply_chain.py:_is_pinned_to_full_sha` accepting any `@` ref): Killed by 2 tests in `test_detector_supply_chain.py`.
   5. *Risk Scoring* (`risk.py:calculate_risk` forcing `trigger_mult = 1.0`): Killed by 4 tests in `test_risk.py`.
 - **Security Rationale**: Proves the test suite is sensitive to regressions, logic inversions, and bypass vulnerabilities.
+
+## Decision 8: Packaging Entrypoints and Dogfood Self-Scan Validation (Phase 5)
+- **Context**: The package required standard entrypoints for CLI execution (`pipelineguard` and `pipelineguard-workflow`), explicit wheel inclusion of package data (`py.typed` and `schemas/*.json`), and verification that CI dogfood scans cleanly produce zero false positives.
+- **Decision**:
+  - Configured `[project.scripts]` in `pyproject.toml` exposing both `pipelineguard` and `pipelineguard-workflow` mapped to `security.workflow.__main__:main`.
+  - Configured `[tool.setuptools.package-data]` ensuring PEP 561 markers and JSON schemas are bundled in wheels.
+  - Verified editable installation `pip install -e . --no-deps` and verified both CLI command aliases.
+  - Executed dogfood self-scan on `.github/workflows/pipelineguard-ci.yml`, confirming 0 findings detected (clean gate).
+- **Security Rationale**: Ensures standard packaging hygiene, eliminates runtime module path confusion, and verifies zero false positives on compliant CI pipelines.
