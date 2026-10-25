@@ -12,6 +12,7 @@ from typing import NoReturn
 
 from security.workflow.analyzer import analyze_paths
 from security.workflow.config import Config, ConfigError, load_config
+from security.workflow.constants import ExitCode
 from security.workflow.events import validate_repository_name
 from security.workflow.reporter import compute_exit_code, format_report, sanitize_text
 
@@ -21,7 +22,7 @@ class PipelineGuardArgumentParser(argparse.ArgumentParser):
 
     def error(self, message: str) -> NoReturn:
         sys.stderr.write(f"Error: {message}\n")
-        sys.exit(3)
+        sys.exit(ExitCode.ERROR)
 
 
 def _load_baseline(baseline_path: Path) -> set[str]:
@@ -108,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="repository",
         help="Repository name for reporting and event attribution",
     )
+    scan_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Display full exception traceback on unexpected failure",
+    )
 
     return parser
 
@@ -118,7 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not args.command:
         sys.stderr.write("Error: Subcommand required. Use 'scan <paths...>'.\n")
-        return 3
+        return ExitCode.ERROR
 
     try:
         # Validate repository
@@ -184,13 +190,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     except ConfigError as exc:
         sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
-        return 3
+        return ExitCode.ERROR
     except ValueError as exc:
         sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
-        return 3
+        return ExitCode.ERROR
     except Exception as exc:  # noqa: BLE001
-        sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
-        return 3
+        if getattr(args, "debug", False):
+            import traceback
+
+            traceback.print_exc()
+        else:
+            sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
+        return ExitCode.ERROR
 
 
 if __name__ == "__main__":

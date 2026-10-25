@@ -31,6 +31,7 @@ from security.workflow.analyzer import (
     analyze_workflow,
 )
 from security.workflow.config import Config, ConfigError, load_config
+from security.workflow.constants import ExitCode
 from security.workflow.events import (
     finding_to_event,
     validate_repository_name,
@@ -39,6 +40,7 @@ from security.workflow.events import (
     to_events as _to_events,
 )
 from security.workflow.finding import Finding
+from security.workflow.limits import Limits
 from security.workflow.parser import parse_workflow_text
 from security.workflow.risk import RiskScore, calculate_risk
 from security.workflow.rules import (
@@ -140,7 +142,9 @@ __all__ = [
     "AnalysisResult",
     "Config",
     "ConfigError",
+    "ExitCode",
     "Finding",
+    "Limits",
     "RiskScore",
     "Rule",
     "Severity",

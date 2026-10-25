@@ -15,9 +15,15 @@ from typing import Any
 
 import yaml
 
+from security.workflow.constants import ExitCode
+from security.workflow.limits import (
+    DEFAULT_MAX_CONFIG_SIZE_BYTES,
+    DEFAULT_MAX_FILE_COUNT,
+    DEFAULT_MAX_FILE_SIZE_BYTES,
+)
 from security.workflow.rules import REGISTRY, Action, Severity
 
-MAX_CONFIG_SIZE: int = 65_536  # 64 KB
+MAX_CONFIG_SIZE: int = DEFAULT_MAX_CONFIG_SIZE_BYTES
 
 _VALID_FAIL_ON: frozenset[str] = frozenset({"block", "warn", "never"})
 _VALID_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
@@ -41,7 +47,7 @@ _VALID_LIMIT_KEYS: frozenset[str] = frozenset({"max_file_count", "max_file_size"
 class ConfigError(Exception):
     """Raised when configuration validation fails."""
 
-    exit_code: int = 3
+    exit_code: int = ExitCode.ERROR
 
 
 @dataclass(frozen=True)
@@ -55,8 +61,8 @@ class Config:
     domain_allowlist: tuple[str, ...] = field(default_factory=tuple)
     fail_on: str = "block"
     path_excludes: tuple[str, ...] = field(default_factory=tuple)
-    max_file_count: int = 1000
-    max_file_size: int = 1_048_576
+    max_file_count: int = DEFAULT_MAX_FILE_COUNT
+    max_file_size: int = DEFAULT_MAX_FILE_SIZE_BYTES
 
     def is_rule_enabled(self, rule_id: str) -> bool:
         """Check whether a rule is enabled under this configuration."""

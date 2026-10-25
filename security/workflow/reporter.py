@@ -13,6 +13,17 @@ import re
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
+from security.workflow.constants import (
+    EVENT_SCHEMA_VERSION,
+    SARIF_INFORMATION_URI,
+    SARIF_LEVEL_MAP,
+    SARIF_SCHEMA_URL,
+    SARIF_SCHEMA_VERSION,
+    SEVERITY_ORDER,
+    TOOL_NAME,
+    TOOL_VERSION,
+    ExitCode,
+)
 from security.workflow.finding import Finding
 from security.workflow.risk import calculate_risk
 from security.workflow.rules import REGISTRY, Action, Severity, lookup
@@ -27,21 +38,9 @@ _CONTROL_CHARS_RE = re.compile(
     r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x1b\u200e\u200f\u202a-\u202e\u2066-\u2069]"
 )
 
-_SARIF_LEVEL_MAP = {
-    Severity.CRITICAL: "error",
-    Severity.HIGH: "error",
-    Severity.MEDIUM: "warning",
-    Severity.LOW: "note",
-    Severity.INFO: "note",
-}
-
-_SEVERITY_ORDER: dict[Severity, int] = {
-    Severity.CRITICAL: 5,
-    Severity.HIGH: 4,
-    Severity.MEDIUM: 3,
-    Severity.LOW: 2,
-    Severity.INFO: 1,
-}
+# Retained aliases for backward compatibility if imported internally
+_SARIF_LEVEL_MAP = SARIF_LEVEL_MAP
+_SEVERITY_ORDER = SEVERITY_ORDER
 
 
 def sanitize_text(text: str) -> str:
@@ -76,12 +75,12 @@ def compute_exit_code(
     """
     threshold = (fail_on or (config.fail_on if config else "block")).lower()
     if threshold == "never":
-        return 0
+        return ExitCode.SUCCESS
 
     base_set = baselined_fingerprints or set()
     active_findings = [f for f in result.findings if f.fingerprint() not in base_set]
     if not active_findings:
-        return 0
+        return ExitCode.SUCCESS
 
     has_block = False
     has_warn = False
@@ -95,12 +94,12 @@ def compute_exit_code(
             has_warn = True
 
     if has_block:
-        return 1
+        return ExitCode.BLOCK
 
     if has_warn and threshold == "warn":
-        return 2
+        return ExitCode.WARN
 
-    return 0
+    return ExitCode.SUCCESS
 
 
 def report_text(
@@ -293,7 +292,7 @@ def report_json(
         )
 
     payload: dict[str, Any] = {
-        "schema_version": "1.0.0",
+        "schema_version": EVENT_SCHEMA_VERSION,
         "repository": sanitize_text(repository),
         "workflows_analyzed": result.workflows_analyzed,
         "summary": {
@@ -391,15 +390,15 @@ def report_sarif(
         )
 
     sarif_payload: dict[str, Any] = {
-        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-        "version": "2.1.0",
+        "$schema": SARIF_SCHEMA_URL,
+        "version": SARIF_SCHEMA_VERSION,
         "runs": [
             {
                 "tool": {
                     "driver": {
-                        "name": "PipelineGuard",
-                        "informationUri": "https://pipelineguard.io",
-                        "version": "1.0.0",
+                        "name": TOOL_NAME,
+                        "informationUri": SARIF_INFORMATION_URI,
+                        "version": TOOL_VERSION,
                         "rules": sarif_rules,
                     }
                 },

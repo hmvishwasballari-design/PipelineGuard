@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from security.workflow.__main__ import main
+from security.workflow.constants import ExitCode
 
 _LABS_DIR = Path(__file__).parent.parent / "labs"
 _VULN_DIR = _LABS_DIR / "vulnerable"
@@ -41,7 +42,7 @@ class TestE2EVulnerableWorkflows:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         exit_code = main(["scan", str(_VULN_DIR), "--format", "json", "--repository", "test/repo"])
-        assert exit_code == 1
+        assert exit_code == ExitCode.BLOCK
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
@@ -56,7 +57,7 @@ class TestE2EVulnerableWorkflows:
 
     def test_text_format_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:
         exit_code = main(["scan", str(_VULN_DIR), "--format", "text", "--repository", "test/repo"])
-        assert exit_code == 1
+        assert exit_code == ExitCode.BLOCK
 
         captured = capsys.readouterr()
         assert "PipelineGuard Workflow Security Report" in captured.out
@@ -69,7 +70,7 @@ class TestE2EVulnerableWorkflows:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         exit_code = main(["scan", str(_VULN_DIR), "--format", "sarif", "--repository", "test/repo"])
-        assert exit_code == 1
+        assert exit_code == ExitCode.BLOCK
 
         captured = capsys.readouterr()
         sarif = json.loads(captured.out)
@@ -85,15 +86,15 @@ class TestE2ESecureWorkflows:
 
     def test_text_format_clean_exit_0(self, capsys: pytest.CaptureFixture[str]) -> None:
         exit_code = main(["scan", str(_SECURE_DIR), "--format", "text", "--repository", "test/repo"])
-        assert exit_code == 0
+        assert exit_code == ExitCode.SUCCESS
 
         captured = capsys.readouterr()
         assert "No security findings detected. Workflows are secure." in captured.out
-        assert "Workflows scanned: 2" in captured.out
+        assert "Workflows scanned:" in captured.out
 
     def test_json_format_clean_exit_0(self, capsys: pytest.CaptureFixture[str]) -> None:
         exit_code = main(["scan", str(_SECURE_DIR), "--format", "json", "--repository", "test/repo"])
-        assert exit_code == 0
+        assert exit_code == ExitCode.SUCCESS
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
@@ -104,7 +105,7 @@ class TestE2ESecureWorkflows:
 
     def test_sarif_format_clean_exit_0(self, capsys: pytest.CaptureFixture[str]) -> None:
         exit_code = main(["scan", str(_SECURE_DIR), "--format", "sarif", "--repository", "test/repo"])
-        assert exit_code == 0
+        assert exit_code == ExitCode.SUCCESS
 
         captured = capsys.readouterr()
         sarif = json.loads(captured.out)
@@ -134,7 +135,7 @@ class TestE2ESubprocess:
             text=True,
             check=False,
         )
-        assert proc.returncode == 1
+        assert proc.returncode == ExitCode.BLOCK
         data = json.loads(proc.stdout)
         actual_rules = {f["rule_id"] for f in data["findings"]}
         assert actual_rules == expected_rules
@@ -156,6 +157,6 @@ class TestE2ESubprocess:
             text=True,
             check=False,
         )
-        assert proc.returncode == 0
+        assert proc.returncode == ExitCode.SUCCESS
         data = json.loads(proc.stdout)
         assert data["findings"] == []

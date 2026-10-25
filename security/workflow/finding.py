@@ -33,6 +33,11 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from security.workflow.limits import (
+    MAX_SNIPPET_LENGTH_CHARS,
+    SNIPPET_TRUNCATION_LIMIT_CHARS,
+)
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -118,8 +123,8 @@ def _safe_snippet(raw: str) -> str:
         Sanitized, redacted, length-bounded snippet.
     """
     cleaned = _redact(_sanitize(raw))
-    if len(cleaned) > 512:
-        cleaned = cleaned[:509] + "..."
+    if len(cleaned) > MAX_SNIPPET_LENGTH_CHARS:
+        cleaned = cleaned[:SNIPPET_TRUNCATION_LIMIT_CHARS] + "..."
     return cleaned
 
 

@@ -7,6 +7,11 @@ from pathlib import Path
 import pytest
 
 from security.workflow.config import Config, ConfigError, load_config, parse_config_dict
+from security.workflow.constants import ExitCode
+from security.workflow.limits import (
+    DEFAULT_MAX_FILE_COUNT,
+    DEFAULT_MAX_FILE_SIZE_BYTES,
+)
 from security.workflow.rules import Action, Severity
 
 
@@ -14,8 +19,8 @@ class TestConfigDefaults:
     def test_default_config(self) -> None:
         cfg = Config()
         assert cfg.fail_on == "block"
-        assert cfg.max_file_count == 1000
-        assert cfg.max_file_size == 1_048_576
+        assert cfg.max_file_count == DEFAULT_MAX_FILE_COUNT
+        assert cfg.max_file_size == DEFAULT_MAX_FILE_SIZE_BYTES
         assert cfg.is_rule_enabled("PG-WF-001") is True
         assert cfg.get_severity("PG-WF-001") == Severity.CRITICAL
         assert cfg.get_action("PG-WF-001") == Action.BLOCK
@@ -157,9 +162,9 @@ class TestInvalidConfigCases:
             load_config(bad_yaml)
 
     def test_config_error_exit_code(self) -> None:
-        assert ConfigError.exit_code == 3
+        assert ConfigError.exit_code == ExitCode.ERROR
         err = ConfigError("test")
-        assert err.exit_code == 3
+        assert err.exit_code == ExitCode.ERROR
 
     def test_parse_config_dict_none(self) -> None:
         cfg = parse_config_dict(None)

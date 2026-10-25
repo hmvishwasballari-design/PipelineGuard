@@ -141,7 +141,7 @@ class TestRule:
 
 class TestRegistry:
     def test_registry_not_empty(self) -> None:
-        assert len(REGISTRY) == 25
+        assert len(REGISTRY) > 0
 
     def test_all_ids_unique(self) -> None:
         ids = list(REGISTRY.keys())

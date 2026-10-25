@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from security.workflow.analyzer import AnalysisResult, analyze_paths
+from security.workflow.constants import ExitCode
 from security.workflow.finding import Finding
 from security.workflow.reporter import (
     compute_exit_code,
@@ -17,6 +18,7 @@ from security.workflow.reporter import (
     report_text,
     sanitize_text,
 )
+from security.workflow.rules import REGISTRY
 
 
 def _make_sample_finding(
@@ -107,7 +109,7 @@ class TestSarifReporter:
         run = parsed["runs"][0]
         driver = run["tool"]["driver"]
         assert driver["name"] == "PipelineGuard"
-        assert len(driver["rules"]) == 25  # 25 rules in REGISTRY
+        assert len(driver["rules"]) == len(REGISTRY)
 
         results = run["results"]
         assert len(results) == len(analysis.findings)
@@ -125,36 +127,36 @@ class TestSarifReporter:
 class TestExitCodeMatrix:
     def test_clean_scan_exit_0(self) -> None:
         res = AnalysisResult(findings=[])
-        assert compute_exit_code(res) == 0
+        assert compute_exit_code(res) == ExitCode.SUCCESS
 
     def test_block_finding_default_fail_on_exit_1(self) -> None:
         # PG-WF-001 default action is BLOCK
         finding = _make_sample_finding("PG-WF-001")
         res = AnalysisResult(findings=[finding])
-        assert compute_exit_code(res) == 1
+        assert compute_exit_code(res) == ExitCode.BLOCK
 
     def test_block_finding_fail_on_never_exit_0(self) -> None:
         finding = _make_sample_finding("PG-WF-001")
         res = AnalysisResult(findings=[finding])
-        assert compute_exit_code(res, fail_on="never") == 0
+        assert compute_exit_code(res, fail_on="never") == ExitCode.SUCCESS
 
     def test_warn_finding_fail_on_block_exit_0(self) -> None:
         # PG-WF-901 default action is WARN
         finding = _make_sample_finding("PG-WF-901")
         res = AnalysisResult(findings=[finding])
-        assert compute_exit_code(res, fail_on="block") == 0
+        assert compute_exit_code(res, fail_on="block") == ExitCode.SUCCESS
 
     def test_warn_finding_fail_on_warn_exit_2(self) -> None:
         finding = _make_sample_finding("PG-WF-901")
         res = AnalysisResult(findings=[finding])
-        assert compute_exit_code(res, fail_on="warn") == 2
+        assert compute_exit_code(res, fail_on="warn") == ExitCode.WARN
 
     def test_baselined_finding_excluded_from_exit_code(self) -> None:
         finding = _make_sample_finding("PG-WF-001")
         res = AnalysisResult(findings=[finding])
         base_set = {finding.fingerprint()}
-        # Since the BLOCK finding is baselined, exit code is 0
-        assert compute_exit_code(res, baselined_fingerprints=base_set) == 0
+        # Since the BLOCK finding is baselined, exit code is SUCCESS (0)
+        assert compute_exit_code(res, baselined_fingerprints=base_set) == ExitCode.SUCCESS
 
     def test_format_report_dispatcher(self) -> None:
         res = AnalysisResult(findings=[_make_sample_finding("PG-WF-001")])
