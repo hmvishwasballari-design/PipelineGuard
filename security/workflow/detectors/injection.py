@@ -22,7 +22,7 @@ from typing import Final
 
 from security.workflow.detectors._base import make_finding, trigger_set
 from security.workflow.finding import CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, Finding
-from security.workflow.models import ParseResult, Step
+from security.workflow.models import Job, ParseResult, Step
 
 __all__ = ["detect"]
 from security.workflow.parser import _collect_expressions
@@ -128,11 +128,10 @@ def _is_github_script(uses: str) -> bool:
 
 def _check_run_step(
     step: Step,
-    job_id: str,
+    job: Job,
     file: str,
     triggers: frozenset[str],
     high_risk: bool,
-    confidence: str,
 ) -> list[Finding]:
     """Check a run: step for untrusted expression interpolation (PG-WF-001, 003)."""
     if step.run is None:
@@ -144,6 +143,7 @@ def _check_run_step(
     if not run_untrusted:
         return []
 
+    confidence = CONFIDENCE_HIGH if high_risk else CONFIDENCE_MEDIUM
     evidence_base = {
         "contexts": [e.text for e in run_untrusted],
         "high_risk_trigger": high_risk,
@@ -157,7 +157,7 @@ def _check_run_step(
                 rule_id="PG-WF-001",
                 file=file,
                 line=expr.line or step.line,
-                job_id=job_id,
+                job_id=job.id,
                 step_name=step.name,
                 snippet=snippet,
                 message=(
@@ -182,7 +182,7 @@ def _check_run_step(
                     rule_id="PG-WF-003",
                     file=file,
                     line=expr.line or step.line,
-                    job_id=job_id,
+                    job_id=job.id,
                     step_name=step.name,
                     snippet=step.run[:200],
                     message=(
@@ -198,11 +198,10 @@ def _check_run_step(
 
 def _check_github_script_step(
     step: Step,
-    job_id: str,
+    job: Job,
     file: str,
     triggers: frozenset[str],
     high_risk: bool,
-    confidence: str,
 ) -> list[Finding]:
     """Check an actions/github-script step for untrusted expression input (PG-WF-002)."""
     if step.uses is None or not _is_github_script(step.uses):
@@ -214,6 +213,7 @@ def _check_github_script_step(
     if not script_untrusted:
         return []
 
+    confidence = CONFIDENCE_HIGH if high_risk else CONFIDENCE_MEDIUM
     evidence_base = {
         "contexts": [e.text for e in script_untrusted],
         "high_risk_trigger": high_risk,
@@ -226,7 +226,7 @@ def _check_github_script_step(
                 rule_id="PG-WF-002",
                 file=file,
                 line=expr.line or step.line,
-                job_id=job_id,
+                job_id=job.id,
                 step_name=step.name,
                 snippet=step.uses,
                 message=(
@@ -264,12 +264,11 @@ def detect(result: ParseResult) -> list[Finding]:
 
     for job in workflow.jobs:
         for step in job.steps:
-            confidence = CONFIDENCE_HIGH if high_risk else CONFIDENCE_MEDIUM
             findings.extend(
-                _check_run_step(step, job.id, file, triggers, high_risk, confidence)
+                _check_run_step(step, job, file, triggers, high_risk)
             )
             findings.extend(
-                _check_github_script_step(step, job.id, file, triggers, high_risk, confidence)
+                _check_github_script_step(step, job, file, triggers, high_risk)
             )
 
     return findings

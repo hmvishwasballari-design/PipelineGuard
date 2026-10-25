@@ -195,6 +195,15 @@ class TestCliSubprocess:
             err = capsys.readouterr().err
             assert "Refusing to write output to a symlink" in err
 
+    def test_baseline_symlink_refused(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        from unittest.mock import patch
+        fake_symlink = tmp_path / "symlink_baseline.json"
+        with patch.object(Path, "is_symlink", return_value=True):
+            exit_code = main(["scan", str(LABS_SECURE), "--baseline", str(fake_symlink)])
+            assert exit_code == ExitCode.ERROR
+            err = capsys.readouterr().err
+            assert "Refusing to load baseline from a symlink" in err
+
     def test_write_atomic_failure(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         from unittest.mock import patch
         out_file = tmp_path / "out.txt"

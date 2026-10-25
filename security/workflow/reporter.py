@@ -405,22 +405,24 @@ def report_sarif(
             }
         )
 
+    run_payload: dict[str, Any] = {
+        "tool": {
+            "driver": {
+                "name": TOOL_NAME,
+                "informationUri": SARIF_INFORMATION_URI,
+                "version": TOOL_VERSION,
+                "rules": sarif_rules,
+            }
+        },
+        "results": sarif_results,
+    }
+    if repository:
+        run_payload["properties"] = {"repository": repository}
+
     sarif_payload: dict[str, Any] = {
         "$schema": SARIF_SCHEMA_URL,
         "version": SARIF_SCHEMA_VERSION,
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": TOOL_NAME,
-                        "informationUri": SARIF_INFORMATION_URI,
-                        "version": TOOL_VERSION,
-                        "rules": sarif_rules,
-                    }
-                },
-                "results": sarif_results,
-            }
-        ],
+        "runs": [run_payload],
     }
 
     return json.dumps(sarif_payload, indent=2)

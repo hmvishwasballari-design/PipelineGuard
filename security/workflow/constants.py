@@ -116,7 +116,6 @@ __all__ = [
     "CONFIDENCE_MULTIPLIERS",
     "DEFAULT_PATH_EXCLUDES",
     "EVENT_SCHEMA_VERSION",
-    "ExitCode",
     "FALLBACK_PACKAGE_VERSION",
     "GRADE_A_MAX_SCORE",
     "GRADE_B_MAX_SCORE",
@@ -132,5 +131,6 @@ __all__ = [
     "TOOL_NAME",
     "TOOL_VERSION",
     "TRIGGER_MULTIPLIERS",
+    "ExitCode",
     "get_package_version",
 ]

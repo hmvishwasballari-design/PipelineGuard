@@ -108,10 +108,7 @@ def _step_checks_out_head_ref(step: Step) -> bool:
     if isinstance(ref_val, str) and _HEAD_REF_EXPR_RE.search(ref_val):
         return True
     # Also check expressions captured on this step
-    for expr in step.expressions:
-        if _HEAD_REF_EXPR_RE.search(expr.text):
-            return True
-    return False
+    return any(_HEAD_REF_EXPR_RE.search(expr.text) for expr in step.expressions)
 
 
 

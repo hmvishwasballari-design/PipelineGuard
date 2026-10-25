@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import jsonschema  # type: ignore[import-untyped]
 import pytest
 
 from security.workflow.analyzer import AnalysisResult, analyze_paths
@@ -122,6 +123,19 @@ class TestSarifReporter:
 
         # Determinism
         assert sarif_out == report_sarif(analysis, repository="test/labs")
+
+    def test_sarif_conforms_to_oasis_2_1_0_schema(self) -> None:
+        """Validate generated SARIF directly against official OASIS SARIF 2.1.0 JSON Schema."""
+        schema_path = Path("security/workflow/schemas/sarif-schema-2.1.0.json")
+        assert schema_path.is_file(), f"Missing SARIF schema at {schema_path}"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+        labs_dir = Path("security/workflow/labs/vulnerable")
+        analysis = analyze_paths(labs_dir)
+        sarif_out = report_sarif(analysis, repository="test/labs")
+        sarif_json = json.loads(sarif_out)
+
+        jsonschema.validate(instance=sarif_json, schema=schema)
 
 
 class TestExitCodeMatrix:

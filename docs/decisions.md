@@ -35,3 +35,12 @@ This document records conservative, secure architectural decisions made during t
   - Added PEP 561 marker files (`security/py.typed` and `security/workflow/py.typed`) to enable downstream strict type checking.
   - Standardized meta-finding creation (rules PG-WF-900 and 901) and detector crash logging using non-formatting logger invocations.
 - **Security Rationale**: Low complexity minimizes hidden logic flaws and bypass vulnerabilities; strict type checking prevents type confusion attacks and unexpected runtime exceptions.
+
+## Decision 6: Offline OASIS SARIF 2.1.0 Validation and Path Traversal Hardening (Phase 3)
+- **Context**: Emitted SARIF must strictly adhere to the OASIS SARIF 2.1.0 schema specification, and file operations (`--baseline`, `--output`, `--config`) must be resilient against symlink attacks and path traversal.
+- **Decision**:
+  - Downloaded and vendored the official OASIS SARIF 2.1.0 JSON Schema into `security/workflow/schemas/sarif-schema-2.1.0.json` so validation runs completely offline without network dependencies.
+  - Added automated schema conformance test `test_sarif_conforms_to_oasis_2_1_0_schema` validating live output from vulnerable labs against the schema.
+  - Hardened `--baseline` loader to refuse symlinks before reading, preventing arbitrary local file exposure.
+  - Attached repository context to the SARIF `run.properties` dictionary.
+- **Security Rationale**: Ensures zero external network dependencies for validation gates, eliminates symlink-based arbitrary file read attacks, and guarantees interoperability with GitHub Advanced Security and SARIF viewers.

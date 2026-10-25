@@ -23,7 +23,7 @@ from security.workflow.limits import (
 )
 from security.workflow.rules import REGISTRY, Action, Severity
 
-__all__ = ["Config", "ConfigError", "MAX_CONFIG_SIZE", "load_config", "parse_config_dict"]
+__all__ = ["MAX_CONFIG_SIZE", "Config", "ConfigError", "load_config", "parse_config_dict"]
 
 MAX_CONFIG_SIZE: int = DEFAULT_MAX_CONFIG_SIZE_BYTES
 

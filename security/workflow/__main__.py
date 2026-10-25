@@ -26,6 +26,8 @@ class PipelineGuardArgumentParser(argparse.ArgumentParser):
 
 
 def _load_baseline(baseline_path: Path) -> set[str]:
+    if baseline_path.is_symlink():
+        raise ConfigError(f"Refusing to load baseline from a symlink: '{baseline_path}'")
     if not baseline_path.is_file():
         raise ConfigError(f"Baseline file not found: '{baseline_path}'")
     try:

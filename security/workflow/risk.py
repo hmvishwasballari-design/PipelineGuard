@@ -94,8 +94,6 @@ def _extract_triggers(triggers_or_workflow: Workflow | Iterable[str] | None) -> 
         return set()
     if isinstance(triggers_or_workflow, Workflow):
         on = triggers_or_workflow.on
-        if on is None:
-            return set()
         if isinstance(on, str):
             return {on}
         if isinstance(on, (list, tuple)):
