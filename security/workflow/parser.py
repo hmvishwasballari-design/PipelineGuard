@@ -329,3 +329,11 @@ def _walk_expressions(
     if isinstance(value, list):
         for nested in value:
             _walk_expressions(nested, line, found)
+
+
+__all__ = [
+    "LineCapturingLoader",
+    "WorkflowSafeLoader",
+    "parse_workflow",
+    "parse_workflow_text",
+]

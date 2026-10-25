@@ -21,6 +21,8 @@ class Expression:
 
 @dataclass
 class Step:
+    """Represents a single step in a GitHub Actions job."""
+
     name: str | None
     uses: str | None
     run: str | None
@@ -42,6 +44,8 @@ class Step:
 
 @dataclass
 class Job:
+    """Represents a single job within a GitHub Actions workflow."""
+
     id: str
     name: str | None
     runs_on: Any
@@ -61,6 +65,8 @@ class Job:
 
 @dataclass
 class Workflow:
+    """Represents a parsed GitHub Actions workflow document."""
+
     path: str
     name: str | None
     on: Any
@@ -83,3 +89,12 @@ class ParseResult:
     @property
     def ok(self) -> bool:
         return self.error is None and self.workflow is not None
+
+
+__all__ = [
+    "Expression",
+    "Job",
+    "ParseResult",
+    "Step",
+    "Workflow",
+]

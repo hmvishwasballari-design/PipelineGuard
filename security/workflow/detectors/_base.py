@@ -80,3 +80,9 @@ def trigger_set(workflow: Workflow) -> frozenset[str]:
     if isinstance(on, dict):
         return frozenset(str(k).lower() for k in on)
     return frozenset()
+
+
+__all__ = [
+    "make_finding",
+    "trigger_set",
+]

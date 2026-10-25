@@ -635,3 +635,13 @@ def rules_by_severity(severity: Severity) -> list[Rule]:
         (r for r in REGISTRY.values() if r.severity == severity),
         key=lambda r: r.id,
     )
+
+
+__all__ = [
+    "REGISTRY",
+    "Action",
+    "Rule",
+    "Severity",
+    "lookup",
+    "rules_by_severity",
+]

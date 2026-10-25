@@ -19,6 +19,8 @@ from security.workflow.detectors._base import make_finding
 from security.workflow.finding import CONFIDENCE_HIGH, Finding
 from security.workflow.models import Job, ParseResult, Step
 
+__all__ = ["detect"]
+
 # ---------------------------------------------------------------------------
 # Compiled regexes (bounded, ReDoS-safe)
 # ---------------------------------------------------------------------------

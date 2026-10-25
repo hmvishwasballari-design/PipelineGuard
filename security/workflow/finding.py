@@ -217,3 +217,11 @@ class Finding:
             A 3-tuple ``(file, line, rule_id)``.
         """
         return (self.file, self.line or 0, self.rule_id)
+
+
+__all__ = [
+    "CONFIDENCE_HIGH",
+    "CONFIDENCE_LOW",
+    "CONFIDENCE_MEDIUM",
+    "Finding",
+]

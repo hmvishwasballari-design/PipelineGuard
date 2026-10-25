@@ -165,3 +165,10 @@ def calculate_risk(
     grade = score_to_grade(score)
 
     return RiskScore(score=score, grade=grade)
+
+
+__all__ = [
+    "RiskScore",
+    "calculate_risk",
+    "score_to_grade",
+]

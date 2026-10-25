@@ -26,3 +26,12 @@ This document records conservative, secure architectural decisions made during t
 - **Context**: Security tools should never leak raw internal stack traces or untrusted filesystem paths by default, but developers require debugging capability during development.
 - **Decision**: Default unexpected error path catches general exceptions, sanitizes the message against control characters, and exits with `ExitCode.ERROR` (3). An explicit `--debug` CLI flag was introduced to emit full tracebacks only when requested by an operator.
 - **Security Rationale**: Fail-closed defense against terminal injection and stack trace leakage in automated pipeline logs.
+
+## Decision 5: Cyclomatic Complexity Decomposition and PEP 561 Typing Marker (Phase 2)
+- **Context**: Several complex functions in `analyzer.py`, `config.py`, `reporter.py`, and detectors (`commands.py`, `injection.py`, `permissions.py`) had cyclomatic complexity exceeding 10 and lacked explicit `__all__` boundaries or PEP 561 marker files.
+- **Decision**:
+  - Decomposed all complex functions into cohesive helper sub-routines, ensuring every function in the package has cyclomatic complexity <= 10.
+  - Added explicit `__all__` declarations across all public and internal detector modules to define clear API boundaries.
+  - Added PEP 561 marker files (`security/py.typed` and `security/workflow/py.typed`) to enable downstream strict type checking.
+  - Standardized meta-finding creation (rules PG-WF-900 and 901) and detector crash logging using non-formatting logger invocations.
+- **Security Rationale**: Low complexity minimizes hidden logic flaws and bypass vulnerabilities; strict type checking prevents type confusion attacks and unexpected runtime exceptions.
