@@ -44,3 +44,13 @@ This document records conservative, secure architectural decisions made during t
   - Hardened `--baseline` loader to refuse symlinks before reading, preventing arbitrary local file exposure.
   - Attached repository context to the SARIF `run.properties` dictionary.
 - **Security Rationale**: Ensures zero external network dependencies for validation gates, eliminates symlink-based arbitrary file read attacks, and guarantees interoperability with GitHub Advanced Security and SARIF viewers.
+
+## Decision 7: Test Suite Mutation Sanity Verification (Phase 4)
+- **Context**: High line coverage can mask low assertion quality if tests execute code without validating specific properties.
+- **Decision**: Conducted 5 manual mutation sanity checks across 5 distinct subsystem modules:
+  1. *Parser* (`parser.py:_trigger_value` returning `None` instead of parsed `on`): Killed by `test_valid_workflow` and `test_on_key_not_coerced_to_boolean`.
+  2. *Injection Detector* (`injection.py:_is_untrusted` returning `False` unconditionally): Killed by 7 tests in `test_detector_injection.py`.
+  3. *Permissions Detector* (`permissions.py:_has_write_scope` bypassing `write-all` check): Killed by 3 tests in `test_detector_permissions.py`.
+  4. *Supply Chain Detector* (`supply_chain.py:_is_pinned_to_full_sha` accepting any `@` ref): Killed by 2 tests in `test_detector_supply_chain.py`.
+  5. *Risk Scoring* (`risk.py:calculate_risk` forcing `trigger_mult = 1.0`): Killed by 4 tests in `test_risk.py`.
+- **Security Rationale**: Proves the test suite is sensitive to regressions, logic inversions, and bypass vulnerabilities.
