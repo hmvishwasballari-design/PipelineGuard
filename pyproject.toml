@@ -79,8 +79,11 @@ fail_under = 90
 
 [tool.pyrefly]
 search-path = ["."]
+python-interpreter-find-command = ["python", "-c", "import sys; print(sys.executable)"]
+ignore-missing-imports = ["yaml", "yaml.*"]
 
 [tool.pyrefly.errors]
 missing-source = "ignore"
 missing-source-for-stubs = "ignore"
+
 
