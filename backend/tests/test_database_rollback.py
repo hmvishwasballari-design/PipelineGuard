@@ -27,7 +27,7 @@ class DatabaseRollbackTests(unittest.TestCase):
         with self.assertRaisesRegex(
             RuntimeError, "Simulated database failure"
         ):
-            create_event(event_data=event_data, db=db)
+            create_event(event_data=event_data, db=db, client={'role': 'scanner'})
 
         db.add.assert_called_once()
         db.commit.assert_called_once()
@@ -46,7 +46,7 @@ class DatabaseRollbackTests(unittest.TestCase):
         )
 
         with self.assertRaises(HTTPException) as context:
-            create_event(event_data=event_data, db=db)
+            create_event(event_data=event_data, db=db, client={'role': 'scanner'})
 
         self.assertEqual(context.exception.status_code, 409)
         db.add.assert_not_called()

@@ -9,6 +9,8 @@ from app.models.security_event import SecurityEvent
 from app.routes.pipelines import router as pipelines_router
 from app.routes.pipeline_runs import router as pipeline_runs_router
 from app.routes.security_events import router as security_events_router
+from app.routes.audit_logs import router as audit_logs_router
+from app.routes.auth_routes import router as auth_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -32,6 +34,8 @@ app.add_middleware(
 app.include_router(pipelines_router)
 app.include_router(pipeline_runs_router)
 app.include_router(security_events_router)
+app.include_router(audit_logs_router)
+app.include_router(auth_router)
 
 
 @app.get("/")

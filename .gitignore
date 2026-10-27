@@ -1,0 +1,26 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Temporary and backup files
+*.bak
+*.pre-auth.bak
+*.before-auth-integration.bak
+
+# Frontend dependencies and generated builds
+node_modules/
+dashboard/dist/
+
+# Local IDE and operating system files
+.vscode/
+.idea/
+.DS_Store

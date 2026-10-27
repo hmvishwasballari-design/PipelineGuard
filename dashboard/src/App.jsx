@@ -40,10 +40,13 @@ import {
 
 import "./App.css";
 import {
+  clearAccessToken,
+  getAccessToken,
   getBackendHealth,
   getPipelines,
   getRuns,
   getSecurityEvents,
+  login,
   updateSecurityEventStatus,
 } from "./services/api";
 
@@ -353,7 +356,75 @@ function StatusBadge({ children, type = "neutral" }) {
    OVERVIEW
 ========================================================= */
 
-function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError }) {
+function OverviewPage({
+  onNavigate,
+  pipelines,
+  pipelineLoading,
+  pipelineError,
+  events = [],
+  eventsLoading = false,
+  eventsError = "",
+}) {
+  const openEvents = events.filter(
+    (event) => String(event.status || "").toUpperCase() === "OPEN"
+  );
+  const criticalEvents = events.filter(
+    (event) => String(event.severity || "").toUpperCase() === "CRITICAL"
+  );
+  const blockedEvents = events.filter(
+    (event) => String(event.status || "").toUpperCase() === "BLOCKED"
+  );
+  const averageRisk = events.length
+    ? events.reduce((total, event) => total + Number(event.risk_score || 0), 0) /
+      events.length
+    : 0;
+
+  const recentEvents = [...events]
+    .sort((a, b) => {
+      const dateA = new Date(a.created_at || a.timestamp || 0).getTime();
+      const dateB = new Date(b.created_at || b.timestamp || 0).getTime();
+      return dateB - dateA;
+    })
+    .slice(0, 4)
+    .map((event) => ({
+      id: event.event_id,
+      title: event.description || event.event_type || "Security event",
+      severity: String(event.severity || "INFO").toLowerCase(),
+      source: event.source || "Unknown source",
+      risk: Number(event.risk_score || 0),
+      status: String(event.status || "OPEN").toUpperCase(),
+      time: event.created_at
+        ? new Date(event.created_at).toLocaleString()
+        : event.timestamp
+          ? new Date(event.timestamp).toLocaleString()
+          : "Time unavailable",
+      description: event.description || "No description provided.",
+    }));
+
+  const activityData = events.reduce((buckets, event) => {
+    const rawDate = event.created_at || event.timestamp;
+    if (!rawDate) return buckets;
+    const date = new Date(rawDate);
+    if (Number.isNaN(date.getTime())) return buckets;
+    const label = date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const existing = buckets.find((bucket) => bucket.time === label);
+    if (existing) {
+      existing.events += 1;
+    } else {
+      buckets.push({ time: label, events: 1, sortTime: date.getTime() });
+    }
+    return buckets;
+  }, []).sort((a, b) => (a.sortTime || 0) - (b.sortTime || 0))
+    .slice(-8);
+
+  const displayActivity = activityData.map(({ time, events: count }) => ({
+    time,
+    events: count,
+  }));
+
   return (
     <>
       <section className="metrics-grid">
@@ -362,22 +433,26 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
             <span>PIPELINES</span>
             <GitBranch size={16} />
           </div>
-          <div className="metric-value">24</div>
+          <div className="metric-value">
+            {pipelineLoading ? "…" : pipelines.length}
+          </div>
           <div className="metric-bottom">
-            <span className="positive">+12.4%</span>
-            <span>vs last week</span>
+            <span>{pipelineError ? "Unavailable" : "Database"}</span>
+            <span>registered pipelines</span>
           </div>
         </div>
 
         <div className="metric-card">
           <div className="metric-top">
-            <span>ACTIVE THREATS</span>
+            <span>OPEN THREATS</span>
             <ShieldAlert size={16} />
           </div>
-          <div className="metric-value">07</div>
+          <div className="metric-value">
+            {eventsLoading ? "…" : openEvents.length}
+          </div>
           <div className="metric-bottom">
-            <span className="critical-text">03 critical</span>
-            <span>requiring attention</span>
+            <span className="critical-text">{criticalEvents.length} critical</span>
+            <span>critical events recorded</span>
           </div>
         </div>
 
@@ -386,22 +461,34 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
             <span>BLOCKED</span>
             <Ban size={16} />
           </div>
-          <div className="metric-value">12</div>
+          <div className="metric-value">
+            {eventsLoading ? "…" : blockedEvents.length}
+          </div>
           <div className="metric-bottom">
-            <span className="positive">100%</span>
-            <span>automated response</span>
+            <span>Recorded status</span>
+            <span>blocked events</span>
           </div>
         </div>
 
         <div className="metric-card">
           <div className="metric-top">
-            <span>RISK INDEX</span>
+            <span>AVERAGE RISK</span>
             <Activity size={16} />
           </div>
-          <div className="metric-value">87.4</div>
+          <div className="metric-value">
+            {eventsLoading ? "…" : averageRisk.toFixed(1)}
+          </div>
           <div className="metric-bottom">
-            <span className="warning-text">HIGH</span>
-            <span>current exposure</span>
+            <span className="warning-text">
+              {events.length
+                ? averageRisk >= 75
+                  ? "HIGH"
+                  : averageRisk >= 40
+                    ? "MEDIUM"
+                    : "LOW"
+                : "NO DATA"}
+            </span>
+            <span>mean event risk / 100</span>
           </div>
         </div>
       </section>
@@ -412,78 +499,72 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
             <div>
               <div className="panel-label">SECURITY TELEMETRY</div>
               <h2>Event activity</h2>
-              <p>Security events detected across monitored pipelines.</p>
+              <p>Recorded security events grouped by creation time.</p>
             </div>
-
             <div className="live-pill">
               <span className="live-dot" />
-              LIVE STREAM
+              BACKEND DATA
             </div>
           </div>
 
           <div className="chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={activityData}>
-                <defs>
-                  <linearGradient
-                    id="activityGradient"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="0%"
-                      stopColor="#8b8b83"
-                      stopOpacity={0.12}
-                    />
-                    <stop
-                      offset="100%"
-                      stopColor="#8b8b83"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#1a1e20"
-                />
-
-                <XAxis
-                  dataKey="time"
-                  tick={{ fill: "#4f544f", fontSize: 8 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-
-                <YAxis
-                  tick={{ fill: "#4f544f", fontSize: 8 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={25}
-                />
-
-                <Tooltip
-                  contentStyle={{
-                    background: "#0c0f11",
-                    border: "1px solid #292d30",
-                    borderRadius: "6px",
-                    color: "#c9cac4",
-                    fontSize: "10px",
-                  }}
-                />
-
-                <Area
-                  type="monotone"
-                  dataKey="events"
-                  stroke="#8b8b83"
-                  strokeWidth={1.5}
-                  fill="url(#activityGradient)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {eventsLoading ? (
+              <p>Loading event activity…</p>
+            ) : eventsError ? (
+              <p role="alert">Unable to load event activity: {eventsError}</p>
+            ) : displayActivity.length === 0 ? (
+              <p>No timestamped security events are available yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={displayActivity}>
+                  <defs>
+                    <linearGradient
+                      id="activityGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="0%" stopColor="#8b8b83" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="#8b8b83" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#1a1e20"
+                  />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fill: "#4f544f", fontSize: 8 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#4f544f", fontSize: 8 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={25}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#0c0f11",
+                      border: "1px solid #292d30",
+                      borderRadius: "6px",
+                      color: "#c9cac4",
+                      fontSize: "10px",
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="events"
+                    stroke="#8b8b83"
+                    strokeWidth={1.5}
+                    fill="url(#activityGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -492,41 +573,60 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
             <div>
               <div className="panel-label">RISK ENGINE</div>
               <h2>Risk index</h2>
-              <p>Current pipeline exposure.</p>
+              <p>Calculated from recorded event risk scores.</p>
             </div>
           </div>
-
           <div className="risk-display">
             <div className="risk-ring">
               <div className="risk-ring-inner">
-                <strong>87.4</strong>
+                <strong>{eventsLoading ? "…" : averageRisk.toFixed(1)}</strong>
                 <span>/100</span>
               </div>
             </div>
-
             <div className="risk-state">
               <span />
-              HIGH EXPOSURE
+              {events.length
+                ? averageRisk >= 75
+                  ? "HIGH EXPOSURE"
+                  : averageRisk >= 40
+                    ? "MODERATE EXPOSURE"
+                    : "LOW EXPOSURE"
+                : "NO EVENT DATA"}
             </div>
-
             <p>
-              Three critical security events currently require investigation.
+              {eventsLoading
+                ? "Loading recorded security events."
+                : eventsError
+                  ? "Risk information is unavailable because events could not be loaded."
+                  : `${openEvents.length} open event(s), including ${criticalEvents.length} critical event(s).`}
             </p>
           </div>
-
           <div className="risk-breakdown">
-            <div>
-              <span>WORKFLOW</span>
-              <strong>91</strong>
-            </div>
-            <div>
-              <span>SECRETS</span>
-              <strong>94</strong>
-            </div>
-            <div>
-              <span>ARTIFACTS</span>
-              <strong>77</strong>
-            </div>
+            {["workflow-security", "secrets-security", "artifact-security"].map(
+              (source) => {
+                const sourceEvents = events.filter(
+                  (event) => String(event.source || "").toLowerCase() === source
+                );
+                const sourceRisk = sourceEvents.length
+                  ? sourceEvents.reduce(
+                      (total, event) => total + Number(event.risk_score || 0),
+                      0
+                    ) / sourceEvents.length
+                  : 0;
+                return (
+                  <div key={source}>
+                    <span>
+                      {source === "workflow-security"
+                        ? "WORKFLOW"
+                        : source === "secrets-security"
+                          ? "SECRETS"
+                          : "ARTIFACTS"}
+                    </span>
+                    <strong>{sourceEvents.length ? sourceRisk.toFixed(0) : "—"}</strong>
+                  </div>
+                );
+              }
+            )}
           </div>
         </div>
       </section>
@@ -538,7 +638,6 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
             <h2>Active pipelines</h2>
             <p>Current health across monitored delivery pipelines.</p>
           </div>
-
           <button
             className="text-button"
             onClick={() => onNavigate("Pipelines")}
@@ -561,7 +660,6 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
                 <div className="pipeline-icon">
                   <GitBranch size={14} />
                 </div>
-
                 <div className="pipeline-info">
                   <strong>{pipeline.name}</strong>
                   <span>
@@ -570,9 +668,14 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
                   </span>
                   <span>{pipeline.pipeline_id}</span>
                 </div>
-
                 <div className="pipeline-status">
-                  <span className={`status-dot ${pipeline.status?.toUpperCase() === "ACTIVE" ? "healthy" : pipeline.status?.toLowerCase()}`} />
+                  <span
+                    className={`status-dot ${
+                      pipeline.status?.toUpperCase() === "ACTIVE"
+                        ? "healthy"
+                        : pipeline.status?.toLowerCase()
+                    }`}
+                  />
                   {pipeline.status}
                 </div>
               </div>
@@ -586,9 +689,8 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
           <div>
             <div className="panel-label">INCIDENT STREAM</div>
             <h2>Recent security events</h2>
-            <p>Latest events requiring monitoring or response.</p>
+            <p>Latest events received from the backend.</p>
           </div>
-
           <button
             className="text-button"
             onClick={() => onNavigate("Threats")}
@@ -598,10 +700,18 @@ function OverviewPage({ onNavigate, pipelines, pipelineLoading, pipelineError })
           </button>
         </div>
 
-        <ThreatList
-          items={incidents.slice(0, 4)}
-          onIncident={() => onNavigate("Incidents")}
-        />
+        {eventsLoading ? (
+          <p>Loading recent security events…</p>
+        ) : eventsError ? (
+          <p role="alert">Unable to load recent events: {eventsError}</p>
+        ) : recentEvents.length === 0 ? (
+          <p>No security events found in the backend.</p>
+        ) : (
+          <ThreatList
+            items={recentEvents}
+            onIncident={() => onNavigate("Incidents")}
+          />
+        )}
       </section>
     </>
   );
@@ -1490,8 +1600,8 @@ function SettingsPage() {
       <div className="settings-footer">
         <Database size={15} />
         <span>
-          Phase 1 uses local mock state. PostgreSQL integration will replace
-          this configuration layer in Phase 2.
+          Pipeline and security event data are connected to the backend.
+          Settings persistence is not yet connected to PostgreSQL.
         </span>
       </div>
     </section>
@@ -1502,7 +1612,59 @@ function SettingsPage() {
    APP
 ========================================================= */
 
+
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+    try {
+      await onLogin(username, password);
+    } catch (err) {
+      setError(err.message || "Unable to sign in.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="auth-screen">
+      <section className="auth-card">
+        <div className="auth-brand">
+          <div className="auth-brand-mark"><Shield size={22} /></div>
+          <div><strong>PIPELINEGUARD</strong><span>SECURITY CONTROL</span></div>
+        </div>
+        <h1>Welcome back</h1>
+        <p className="auth-description">Sign in to access your CI/CD security dashboard.</p>
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label className="auth-field">Username
+            <input autoComplete="username" value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required maxLength={128} autoFocus />
+          </label>
+          <label className="auth-field">Password
+            <input type="password" autoComplete="current-password"
+              value={password} onChange={(event) => setPassword(event.target.value)}
+              required maxLength={1024} />
+          </label>
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <button className="auth-submit" type="submit" disabled={submitting}>
+            {submitting ? "Authenticating..." : "Sign in securely"}
+          </button>
+        </form>
+        <div className="auth-footer">AUTHORIZED ACCESS ONLY · PIPELINEGUARD</div>
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(() => Boolean(getAccessToken()));
   const [activePage, setActivePage] = useState("Overview");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1529,6 +1691,34 @@ const [securityEventsError, setSecurityEventsError] = useState("");
   }, []);
 
   useEffect(() => {
+    const handleUnauthorized = () => setAuthenticated(false);
+    window.addEventListener("pipelineguard:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("pipelineguard:unauthorized", handleUnauthorized);
+  }, []);
+
+  const handleLogin = async (username, password) => {
+    await login(username, password);
+    setPipelineLoading(true);
+    setRunsLoading(true);
+    setSecurityEventsLoading(true);
+    setPipelineError("");
+    setRunsError("");
+    setSecurityEventsError("");
+    setAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    clearAccessToken();
+    setAuthenticated(false);
+    setDbPipelines([]);
+    setDbRuns([]);
+    setDbSecurityEvents([]);
+    setActivePage("Overview");
+  };
+
+
+  useEffect(() => {
+    if (!authenticated) return undefined;
     let cancelled = false;
 
     getPipelines()
@@ -1552,7 +1742,7 @@ const [securityEventsError, setSecurityEventsError] = useState("");
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authenticated]);
 
 const refreshSecurityEvents = async () => {
   try {
@@ -1568,6 +1758,7 @@ const refreshSecurityEvents = async () => {
 };
 
 useEffect(() => {
+  if (!authenticated) return undefined;
   let cancelled = false;
 
   getSecurityEvents()
@@ -1593,10 +1784,11 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, []);
+}, [authenticated]);
 
 
   useEffect(() => {
+    if (!authenticated) return undefined;
     let cancelled = false;
 
     getRuns()
@@ -1622,7 +1814,7 @@ useEffect(() => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authenticated]);
 
 
   const handleNavigation = (page) => {
@@ -1708,9 +1900,23 @@ return (
 
       case "Overview":
       default:
-        return <OverviewPage onNavigate={handleNavigation} pipelines={dbPipelines} pipelineLoading={pipelineLoading} pipelineError={pipelineError} />;
+        return (
+          <OverviewPage
+            onNavigate={handleNavigation}
+            pipelines={dbPipelines}
+            pipelineLoading={pipelineLoading}
+            pipelineError={pipelineError}
+            events={dbSecurityEvents}
+            eventsLoading={securityEventsLoading}
+            eventsError={securityEventsError}
+          />
+        );
     }
   };
+
+  if (!authenticated) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
 
   return (
     <div className="app-shell">
@@ -1818,6 +2024,9 @@ return (
             <div className="profile">
               <div className="profile-avatar">HV</div>
             </div>
+            <button className="profile-logout" onClick={handleLogout}>
+              Sign out
+            </button>
           </div>
         </header>
 
@@ -1826,7 +2035,7 @@ return (
 
           <footer className="app-footer">
             <span>PIPELINEGUARD SECURITY CONTROL</span>
-            <span>PHASE 1 · MOCK DATA</span>
+            <span>PHASE 1 · DATABASE CONNECTED</span>
           </footer>
         </div>
       </main>
@@ -1909,5 +2118,79 @@ return (
         </div>
       )}
     </div>
+  );
+}
+
+function AuditLogPage() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    import("./services/api")
+      .then(({ getAuditLogs }) => getAuditLogs())
+      .then((data) => {
+        if (!cancelled) setLogs(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || "Failed to load audit logs.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section className="page-content">
+      <div className="page-header">
+        <div>
+          <h1>Audit Log</h1>
+          <p>Recorded security incident status changes.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <p>Loading audit records...</p>
+      ) : error ? (
+        <p role="alert">Could not load audit records: {error}</p>
+      ) : logs.length === 0 ? (
+        <p>No audit records found.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", padding: "12px" }}>Time</th>
+                <th style={{ textAlign: "left", padding: "12px" }}>Incident ID</th>
+                <th style={{ textAlign: "left", padding: "12px" }}>Previous status</th>
+                <th style={{ textAlign: "left", padding: "12px" }}>New status</th>
+                <th style={{ textAlign: "left", padding: "12px" }}>Actor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log) => (
+                <tr key={log.id}>
+                  <td style={{ padding: "12px" }}>
+                    {log.changed_at
+                      ? new Date(log.changed_at).toLocaleString()
+                      : "—"}
+                  </td>
+                  <td style={{ padding: "12px" }}>{log.event_id}</td>
+                  <td style={{ padding: "12px" }}>{log.previous_status}</td>
+                  <td style={{ padding: "12px" }}>{log.new_status}</td>
+                  <td style={{ padding: "12px" }}>{log.actor}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

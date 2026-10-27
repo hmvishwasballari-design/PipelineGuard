@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.database import get_db
+from app.auth import DashboardUser, ScannerClient
 from app.models.security_event import SecurityEvent
 from app.models.audit_log import AuditLog
 from app.schemas.security_event import (
@@ -14,7 +15,10 @@ router = APIRouter(prefix="/api/events", tags=["Security Events"])
 
 
 @router.get("", response_model=list[SecurityEventResponse])
-def list_events(db: Session = Depends(get_db)):
+def list_events(
+    user: DashboardUser,
+    db: Session = Depends(get_db),
+):
     return (
         db.query(SecurityEvent)
         .order_by(SecurityEvent.id.desc())
@@ -29,6 +33,7 @@ def list_events(db: Session = Depends(get_db)):
 )
 def create_event(
     event_data: SecurityEventCreate,
+    client: ScannerClient,
     db: Session = Depends(get_db),
 ):
     existing = (
@@ -65,6 +70,7 @@ class SecurityEventStatusUpdate(BaseModel):
 def update_event_status(
     event_id: str,
     status_data: SecurityEventStatusUpdate,
+    user: DashboardUser,
     db: Session = Depends(get_db),
 ):
     allowed_statuses = {
@@ -107,7 +113,7 @@ def update_event_status(
         event_id=event.event_id,
         previous_status=previous_status,
         new_status=new_status,
-        actor="system",
+        actor=user["username"],
     )
     db.add(audit_log)
 
