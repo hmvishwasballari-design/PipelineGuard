@@ -166,7 +166,7 @@ class Finding:
         # Bypass frozen to sanitize — use object.__setattr__ only here.
         object.__setattr__(self, "file", _sanitize(self.file))
         object.__setattr__(self, "snippet", _safe_snippet(self.snippet))
-        object.__setattr__(self, "message", _sanitize(self.message))
+        object.__setattr__(self, "message", _redact(_sanitize(self.message)))
         if self.job_id is not None:
             object.__setattr__(self, "job_id", _sanitize(self.job_id))
         if self.step_name is not None:
