@@ -70,6 +70,30 @@ jobs:
         assert elapsed <= MAX_DEEP_NESTING_TIME_SEC
         assert result.workflows_analyzed == 1
 
+    def test_exceeds_max_yaml_depth_rejected(self) -> None:
+        """YAML nesting exceeding MAX_YAML_DEPTH (100) must be rejected with PG-WF-900."""
+        depth = 120
+        nested_yaml = "name: TooDeep\non: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    env:\n"
+        curr_indent = "      "
+        for i in range(depth):
+            nested_yaml += f"{curr_indent}k{i}:\n"
+            curr_indent += "  "
+        nested_yaml += f"{curr_indent}val: deep\n"
+
+        result = analyze_text(nested_yaml)
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "PG-WF-900"
+        assert "depth exceeds limit" in result.findings[0].message
+
+    def test_exceeds_max_yaml_aliases_rejected(self) -> None:
+        """YAML alias count exceeding MAX_YAML_ALIASES (100) must be rejected with PG-WF-900."""
+        aliases = "\n".join("          - *anchor" for _ in range(120))
+        alias_bomb = f"name: BigAlias\non: push\nbase: &anchor 'data'\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hello\n        env:\n          items:\n{aliases}\n"
+        result = analyze_text(alias_bomb)
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "PG-WF-900"
+        assert "alias count exceeds limit" in result.findings[0].message
+
     def test_huge_node_count_and_long_lines(self) -> None:
         """Workflows with large counts of mapping keys or long lines must parse boundedly."""
         lines = ["name: Huge", "on: push", "jobs:", "  build:", "    runs-on: ubuntu-latest", "    env:"]

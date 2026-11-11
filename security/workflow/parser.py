@@ -16,6 +16,11 @@ import yaml
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode
 
+from security.workflow.limits import (
+    MAX_YAML_ALIASES,
+    MAX_YAML_DEPTH,
+    MAX_YAML_NODES,
+)
 from security.workflow.models import Expression, Job, ParseResult, Step, Workflow
 
 _EXPRESSION_RE = re.compile(r"\$\{\{((?:[^{}]|\{(?!\{)|\}(?!\})){0,2000}?)\}\}")
@@ -55,6 +60,40 @@ class LineCapturingLoader(WorkflowSafeLoader):
         super().__init__(stream)
         self.lines: dict[int, int] = {}
         self.key_lines: dict[int, dict[Any, int]] = {}
+        self.node_count: int = 0
+        self.alias_count: int = 0
+        self.depth: int = 0
+
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        self.node_count += 1
+        if self.node_count > MAX_YAML_NODES:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML node count exceeds limit of {MAX_YAML_NODES}",
+                None,
+            )
+        if self.check_event(yaml.AliasEvent):
+            self.alias_count += 1
+            if self.alias_count > MAX_YAML_ALIASES:
+                raise ConstructorError(
+                    None,
+                    None,
+                    f"YAML alias count exceeds limit of {MAX_YAML_ALIASES}",
+                    None,
+                )
+        if self.depth > MAX_YAML_DEPTH:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML nesting depth exceeds limit of {MAX_YAML_DEPTH}",
+                None,
+            )
+        self.depth += 1
+        try:
+            return super().compose_node(parent, index)
+        finally:
+            self.depth -= 1
 
     def construct_mapping(self, node: MappingNode, deep: bool = False) -> dict[Any, Any]:
         if not isinstance(node, MappingNode):
@@ -96,7 +135,7 @@ def parse_workflow_text(text: str, path: str = "<string>") -> ParseResult:
     """Parse workflow YAML from a string. Does not raise on bad YAML."""
     try:
         data, lines, key_lines = _safe_load_with_lines(text)
-    except yaml.YAMLError as exc:
+    except (yaml.YAMLError, RecursionError) as exc:
         return ParseResult(workflow=None, error=_format_yaml_error(path, exc), raw_text=text, path=path)
 
     if data is None:
@@ -180,7 +219,7 @@ def _safe_load_with_lines(
         loader.dispose()
 
 
-def _format_yaml_error(path: str, exc: yaml.YAMLError) -> str:
+def _format_yaml_error(path: str, exc: Exception) -> str:
     line = None
     mark = getattr(exc, "problem_mark", None)
     if mark is not None:
