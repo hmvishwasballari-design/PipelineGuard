@@ -101,6 +101,29 @@ def analyze_text(
         1
     """
     cfg = config if config is not None else Config()
+    text_bytes = len(text.encode("utf-8"))
+    if text_bytes > cfg.max_file_size:
+        return AnalysisResult(
+            findings=(
+                Finding(
+                    rule_id="PG-WF-900",
+                    file=filename,
+                    line=None,
+                    column=None,
+                    job_id=None,
+                    step_name=None,
+                    snippet="",
+                    message=(
+                        f"Workflow text size ({text_bytes} bytes) "
+                        f"exceeds maximum allowed limit of {cfg.max_file_size} bytes"
+                    ),
+                    confidence="HIGH",
+                    evidence={"size": text_bytes, "limit": cfg.max_file_size},
+                ),
+            ),
+            suppressed=(),
+            workflows_analyzed=1,
+        )
     parse_result = parse_workflow_text(text, path=filename)
     return analyze_workflow(parse_result, config=cfg)
 

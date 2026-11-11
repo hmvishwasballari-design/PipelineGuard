@@ -143,7 +143,16 @@ jobs:
         assert isinstance(result, AnalysisResult)
         assert len(result.findings) == 1
         assert result.findings[0].rule_id == "PG-WF-900"
-        assert result.findings[0].file == "bad.yml"
+
+    def test_analyze_text_size_limit_enforced(self) -> None:
+        huge_text = "name: Huge\non: push\njobs: {}\n" + "# padding\n" * 50
+        cfg = Config(max_file_size=50)
+        result = analyze_text(huge_text, filename="huge.yml", config=cfg)
+        assert isinstance(result, AnalysisResult)
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "PG-WF-900"
+        assert "exceeds maximum allowed limit" in result.findings[0].message
+        assert result.findings[0].file == "huge.yml"
 
     def test_default_filename_memory(self) -> None:
         workflow_yaml = """
