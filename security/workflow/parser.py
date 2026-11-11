@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 from yaml.constructor import ConstructorError
-from yaml.nodes import MappingNode
+from yaml.nodes import MappingNode, SequenceNode
 
 from security.workflow.limits import (
     MAX_YAML_ALIASES,
@@ -61,6 +61,7 @@ class LineCapturingLoader(WorkflowSafeLoader):
         self.lines: dict[int, int] = {}
         self.key_lines: dict[int, dict[Any, int]] = {}
         self.node_count: int = 0
+        self.constructed_count: int = 0
         self.alias_count: int = 0
         self.depth: int = 0
 
@@ -104,6 +105,14 @@ class LineCapturingLoader(WorkflowSafeLoader):
                 node.start_mark,
             )
         self.flatten_mapping(node)
+        self.constructed_count += len(node.value)
+        if self.constructed_count > MAX_YAML_NODES:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML constructed node count exceeds limit of {MAX_YAML_NODES}",
+                node.start_mark,
+            )
         mapping: dict[Any, Any] = {}
         key_lines: dict[Any, int] = {}
         for key_node, value_node in node.value:
@@ -116,6 +125,17 @@ class LineCapturingLoader(WorkflowSafeLoader):
         self.lines[id(mapping)] = node.start_mark.line + 1
         self.key_lines[id(mapping)] = key_lines
         return mapping
+
+    def construct_sequence(self, node: SequenceNode, deep: bool = False) -> list[Any]:
+        self.constructed_count += len(node.value)
+        if self.constructed_count > MAX_YAML_NODES:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML constructed node count exceeds limit of {MAX_YAML_NODES}",
+                node.start_mark,
+            )
+        return super().construct_sequence(node, deep=deep)
 
 
 def parse_workflow(path: str | Path) -> ParseResult:
@@ -347,13 +367,19 @@ def _optional_str(value: Any) -> str | None:
 
 def _collect_expressions(value: Any, default_line: int | None) -> list[Expression]:
     found: list[Expression] = []
-    _walk_expressions(value, default_line, found)
+    seen: set[int] = set()
+    _walk_expressions(value, default_line, found, seen)
     return found
 
 
 def _walk_expressions(
-    value: Any, line: int | None, found: list[Expression]
+    value: Any, line: int | None, found: list[Expression], seen: set[int]
 ) -> None:
+    val_id = id(value)
+    if isinstance(value, (dict, list)):
+        if val_id in seen:
+            return
+        seen.add(val_id)
     if isinstance(value, str):
         for match in _EXPRESSION_RE.finditer(value):
             inner = match.group(1).strip()
@@ -363,11 +389,11 @@ def _walk_expressions(
         return
     if isinstance(value, dict):
         for nested in value.values():
-            _walk_expressions(nested, line, found)
+            _walk_expressions(nested, line, found, seen)
         return
     if isinstance(value, list):
         for nested in value:
-            _walk_expressions(nested, line, found)
+            _walk_expressions(nested, line, found, seen)
 
 
 __all__ = [

@@ -94,6 +94,16 @@ jobs:
         assert result.findings[0].rule_id == "PG-WF-900"
         assert "alias count exceeds limit" in result.findings[0].message
 
+    def test_exceeds_max_yaml_constructed_nodes_rejected(self) -> None:
+        """YAML construction expanding beyond MAX_YAML_NODES (50k) must be rejected with PG-WF-900."""
+        base = "\n".join([f"  k{i}: v{i}" for i in range(1000)])
+        merges = "\n".join([f"  job_{j}:\n    <<: *base" for j in range(60)])
+        doc = f"base: &base\n{base}\nname: test\non: push\njobs:\n{merges}\n"
+        result = analyze_text(doc)
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "PG-WF-900"
+        assert "constructed node count exceeds limit" in result.findings[0].message
+
     def test_huge_node_count_and_long_lines(self) -> None:
         """Workflows with large counts of mapping keys or long lines must parse boundedly."""
         lines = ["name: Huge", "on: push", "jobs:", "  build:", "    runs-on: ubuntu-latest", "    env:"]
