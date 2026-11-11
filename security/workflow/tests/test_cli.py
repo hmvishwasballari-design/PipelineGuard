@@ -67,6 +67,20 @@ class TestCliDirectInvocation:
         exit_code = main(["scan", str(LABS_VULN), "--fail-on", "never"])
         assert exit_code == ExitCode.SUCCESS
 
+    def test_cli_overrides_env_fail_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Env sets fail_on to block, CLI overrides to never
+        monkeypatch.setenv("PIPELINEGUARD_FAIL_ON", "block")
+        exit_code = main(["scan", str(LABS_VULN), "--fail-on", "never"])
+        assert exit_code == ExitCode.SUCCESS
+
+    def test_cli_repository_env_default(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+        monkeypatch.setenv("PIPELINEGUARD_REPOSITORY", "env-org/env-repo")
+        exit_code = main(["scan", str(LABS_SECURE), "--format", "json"])
+        assert exit_code == ExitCode.SUCCESS
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["repository"] == "env-org/env-repo"
+
     def test_warn_only_fail_on_warn_exits_2(self, tmp_path: Path) -> None:
         wf = tmp_path / "warn_wf.yml"
         # Create a workflow that only has a detector error or warning rule

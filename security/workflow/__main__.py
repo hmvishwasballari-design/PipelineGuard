@@ -108,7 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument(
         "--repository",
-        default="repository",
+        default=os.environ.get("PIPELINEGUARD_REPOSITORY", "repository"),
         help="Repository name for reporting and event attribution",
     )
     scan_parser.add_argument(

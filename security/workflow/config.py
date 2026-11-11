@@ -8,6 +8,7 @@ Strictly rejects unknown keys and malformed structures with exit code 3 (ConfigE
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,6 +66,24 @@ class Config:
     path_excludes: tuple[str, ...] = field(default_factory=tuple)
     max_file_count: int = DEFAULT_MAX_FILE_COUNT
     max_file_size: int = DEFAULT_MAX_FILE_SIZE_BYTES
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fail_on, str) or self.fail_on.lower() not in _VALID_FAIL_ON:
+            raise ConfigError(
+                f"Invalid 'fail_on' value: '{self.fail_on}'. Must be one of: block, warn, never"
+            )
+        if (
+            not isinstance(self.max_file_count, int)
+            or isinstance(self.max_file_count, bool)
+            or self.max_file_count <= 0
+        ):
+            raise ConfigError("max_file_count must be a positive integer")
+        if (
+            not isinstance(self.max_file_size, int)
+            or isinstance(self.max_file_size, bool)
+            or self.max_file_size <= 0
+        ):
+            raise ConfigError("max_file_size must be a positive integer")
 
     def is_rule_enabled(self, rule_id: str) -> bool:
         """Check whether a rule is enabled under this configuration."""
@@ -344,8 +363,63 @@ def parse_config_dict(data: Any) -> Config:
     )
 
 
+def _override_fail_on_from_env(current: str) -> str:
+    if "PIPELINEGUARD_FAIL_ON" in os.environ:
+        val = os.environ["PIPELINEGUARD_FAIL_ON"]
+        if val.lower() not in _VALID_FAIL_ON:
+            raise ConfigError(
+                f"Invalid 'PIPELINEGUARD_FAIL_ON' value: '{val}'. Must be one of: block, warn, never"
+            )
+        return val.lower()
+    return current
+
+
+def _override_limit_from_env(env_var: str, current: int) -> int:
+    if env_var in os.environ:
+        raw = os.environ[env_var]
+        try:
+            val = int(raw)
+            if val <= 0:
+                raise ValueError
+            return val
+        except ValueError:
+            raise ConfigError(
+                f"Invalid '{env_var}' value: '{raw}'. Must be a positive integer"
+            ) from None
+    return current
+
+
+def _apply_env_overrides(cfg: Config) -> Config:
+    """Apply environment variable overrides onto a loaded Config."""
+    fail_on = _override_fail_on_from_env(cfg.fail_on)
+    max_file_count = _override_limit_from_env("PIPELINEGUARD_MAX_FILE_COUNT", cfg.max_file_count)
+    max_file_size = _override_limit_from_env("PIPELINEGUARD_MAX_FILE_SIZE", cfg.max_file_size)
+
+    return Config(
+        enabled_rules=cfg.enabled_rules,
+        disabled_rules=cfg.disabled_rules,
+        severity_overrides=cfg.severity_overrides,
+        action_overrides=cfg.action_overrides,
+        domain_allowlist=cfg.domain_allowlist,
+        fail_on=fail_on,
+        path_excludes=cfg.path_excludes,
+        max_file_count=max_file_count,
+        max_file_size=max_file_size,
+    )
+
+
+def _find_default_config_path() -> Path | None:
+    for candidate in ("pipelineguard.yml", "pipelineguard.yaml", ".pipelineguard.yml"):
+        p = Path(candidate)
+        if p.is_file():
+            return p
+    return None
+
+
 def load_config(path: str | Path | None = None) -> Config:
-    """Load configuration from a file or fallback to defaults.
+    """Load configuration from a file or fallback to defaults, applying env overrides.
+
+    Precedence: defaults < file < env.
 
     Args:
         path: Path to configuration YAML file, or None to search default locations.
@@ -357,13 +431,14 @@ def load_config(path: str | Path | None = None) -> Config:
         ConfigError: On validation failure, invalid YAML, missing file, or size limit.
     """
     if path is None:
-        for candidate in ("pipelineguard.yml", "pipelineguard.yaml", ".pipelineguard.yml"):
-            p = Path(candidate)
-            if p.is_file():
-                path = p
-                break
+        env_config = os.environ.get("PIPELINEGUARD_CONFIG")
+        if env_config:
+            path = env_config
         else:
-            return Config()
+            default_path = _find_default_config_path()
+            if default_path is None:
+                return _apply_env_overrides(Config())
+            path = default_path
 
     cfg_path = Path(path)
     if not cfg_path.is_file():
@@ -391,4 +466,5 @@ def load_config(path: str | Path | None = None) -> Config:
     except yaml.YAMLError as exc:
         raise ConfigError(f"Malformed YAML in '{cfg_path}': {exc}") from None
 
-    return parse_config_dict(parsed)
+    base_cfg = parse_config_dict(parsed)
+    return _apply_env_overrides(base_cfg)
