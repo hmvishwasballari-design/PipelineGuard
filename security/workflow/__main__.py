@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -56,10 +57,9 @@ def _write_atomic(output_path: Path, content: str) -> None:
         tmp_path.replace(output_path)
     except OSError as exc:
         if tmp_path.exists():
-            try:
+            # Best-effort cleanup of temporary file if atomic replacement fails
+            with contextlib.suppress(OSError):
                 tmp_path.unlink()
-            except OSError:
-                pass
         raise ConfigError(f"Failed to write output to '{output_path}': {exc}") from None
 
 
