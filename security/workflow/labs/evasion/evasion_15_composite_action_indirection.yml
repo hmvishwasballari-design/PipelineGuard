@@ -15,3 +15,4 @@ jobs:
         uses: ./.github/actions/sink
         with:
           user_text: ${{ github.event.comment.body }}
+
