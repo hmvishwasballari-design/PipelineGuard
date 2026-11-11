@@ -1,0 +1,17 @@
+name: Evasion Env Indirection
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  indirect:
+    runs-on: ubuntu-latest
+    env:
+      UNTRUSTED_TITLE: ${{ github.event.issue.title }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Shell step interpolating env var expression
+        run: echo "${{ env.UNTRUSTED_TITLE }}"

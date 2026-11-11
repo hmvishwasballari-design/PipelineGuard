@@ -46,5 +46,29 @@
   "evasion_12_env_sink_write_indirection.yml": {
     "rules": ["PG-WF-001", "PG-WF-003"],
     "description": "untrusted expression written to GITHUB_ENV sink with format wrapper"
+  },
+  "evasion_13_env_expression_indirection.yml": {
+    "rules": [],
+    "description": "expression indirection via job-level env variable interpolation"
+  },
+  "evasion_14_matrix_expression_indirection.yml": {
+    "rules": [],
+    "description": "expression indirection via build matrix strategy value"
+  },
+  "evasion_15_composite_action_indirection.yml": {
+    "rules": [],
+    "description": "untrusted input passed as parameter to local composite action"
+  },
+  "evasion_16_reusable_workflow_secret_leak.yml": {
+    "rules": ["PG-WF-007", "PG-WF-019"],
+    "description": "reusable workflow invoked with unpinned tag on pull_request_target"
+  },
+  "evasion_17_yaml_anchor_command_alias.yml": {
+    "rules": ["PG-WF-008"],
+    "description": "malicious curl | bash command defined in anchor and invoked via alias"
+  },
+  "evasion_18_multiline_shlex_obfuscation.yml": {
+    "rules": ["PG-WF-008", "PG-WF-010"],
+    "description": "multiline variable concatenation evaluated via eval subshell"
   }
 }

@@ -69,3 +69,14 @@ This document records conservative, secure architectural decisions made during t
 - **Decision**: Added `[tool.pyrefly]` and `[tool.pyrefly.errors]` with `missing-source = "ignore"` and `missing-source-for-stubs = "ignore"` to `pyproject.toml`.
 - **Security Rationale**: Eliminates IDE false-positive diagnostics in a cross-platform manner without committing machine-specific interpreter paths to repository configuration.
 
+## Decision 10: Evasion Analysis, Detection Boundaries, and Inter-Procedural Dataflow Limits
+- **Context**: Adversarial workflow authors can attempt to conceal vulnerabilities using expression indirection (assigning untrusted GitHub contexts to job-level `env` or `matrix` variables before interpolating them in `run:`), delegating execution to local composite actions, using YAML anchors, or obfuscating shell scripts via multiline variable concatenation and `eval`.
+- **Decision**:
+  - Maintained Member 1's architectural scope as a fast, single-file AST analyzer that parses and audits individual workflow definitions deterministically without inter-repository network fetching or cross-file recursive composite action parsing.
+  - *YAML Anchors and Aliases*: Handled natively by PyYAML AST construction. Workflows using YAML anchors to alias malicious commands (e.g. `evasion_17`) are resolved at construct time and reliably detected by PG-WF-008.
+  - *Multiline and Eval Obfuscation*: Handled by regex and token normalization in shell detectors (e.g. `evasion_18` detected by PG-WF-008 and PG-WF-010).
+  - *Reusable Workflows on PR Targets*: Detected by PG-WF-007 and PG-WF-019 (e.g. `evasion_16`).
+  - *Expression Indirection via Env / Matrix (`evasion_13`, `evasion_14`)*: Logged as a known detection boundary. Expanding inter-step dataflow requires symbolic evaluation of GitHub Actions runtime expression evaluation contexts, which introduces high false-positive rates when environment variables are sanitized or modified before execution.
+  - *Composite Action Indirection (`evasion_15`)*: Logged as a known detection boundary. Inspecting `./.github/actions/.../action.yml` files requires cross-file filesystem resolution beyond the single-file workflow AST contract.
+- **Security Rationale**: Preserves analyzer speed, prevents ReDoS and unbounded recursion, and establishes clear demarcation for downstream taint-analysis engines (Member 2/3).
+
