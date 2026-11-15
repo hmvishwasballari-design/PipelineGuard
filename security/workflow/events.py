@@ -9,14 +9,18 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
+from security.workflow.constants import EVENT_SCHEMA_VERSION
 from security.workflow.finding import Finding
 from security.workflow.rules import lookup
 
 if TYPE_CHECKING:
     from security.workflow.analyzer import AnalysisResult
     from security.workflow.config import Config
+
+EVENT_SOURCE: Final[str] = "workflow-security"
+DEFAULT_EVENT_TYPE: Final[str] = "workflow_finding"
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "pipelineguard-event.schema.json"
 
@@ -67,8 +71,8 @@ def finding_to_event(
     config: Config | None = None,
     status: str = "active",
     timestamp: str | None = None,
-    schema_version: str = "1.0.0",
-    event_type: str = "workflow_finding",
+    schema_version: str = EVENT_SCHEMA_VERSION,
+    event_type: str = DEFAULT_EVENT_TYPE,
 ) -> dict[str, Any]:
     """Convert a single Finding into a PipelineGuard security event dictionary.
 
@@ -99,7 +103,7 @@ def finding_to_event(
     event: dict[str, Any] = {
         "schema_version": schema_version,
         "event_type": event_type,
-        "source": "workflow-security",
+        "source": EVENT_SOURCE,
         "severity": severity,
         "repository": repo,
         "file": finding.file,
@@ -122,8 +126,8 @@ def to_events(
     *,
     config: Config | None = None,
     timestamp: str | None = None,
-    schema_version: str = "1.0.0",
-    event_type: str = "workflow_finding",
+    schema_version: str = EVENT_SCHEMA_VERSION,
+    event_type: str = DEFAULT_EVENT_TYPE,
 ) -> list[dict[str, Any]]:
     """Convert an AnalysisResult into a list of PipelineGuard security events.
 
@@ -170,3 +174,13 @@ def to_events(
         )
 
     return events
+
+
+__all__ = [
+    "DEFAULT_EVENT_TYPE",
+    "EVENT_SOURCE",
+    "finding_to_event",
+    "load_event_schema",
+    "to_events",
+    "validate_repository_name",
+]

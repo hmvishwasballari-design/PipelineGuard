@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -12,6 +13,7 @@ from typing import NoReturn
 
 from security.workflow.analyzer import analyze_paths
 from security.workflow.config import Config, ConfigError, load_config
+from security.workflow.constants import ExitCode
 from security.workflow.events import validate_repository_name
 from security.workflow.reporter import compute_exit_code, format_report, sanitize_text
 
@@ -21,10 +23,12 @@ class PipelineGuardArgumentParser(argparse.ArgumentParser):
 
     def error(self, message: str) -> NoReturn:
         sys.stderr.write(f"Error: {message}\n")
-        sys.exit(3)
+        sys.exit(ExitCode.ERROR)
 
 
 def _load_baseline(baseline_path: Path) -> set[str]:
+    if baseline_path.is_symlink():
+        raise ConfigError(f"Refusing to load baseline from a symlink: '{baseline_path}'")
     if not baseline_path.is_file():
         raise ConfigError(f"Baseline file not found: '{baseline_path}'")
     try:
@@ -53,10 +57,9 @@ def _write_atomic(output_path: Path, content: str) -> None:
         tmp_path.replace(output_path)
     except OSError as exc:
         if tmp_path.exists():
-            try:
+            # Best-effort cleanup of temporary file if atomic replacement fails
+            with contextlib.suppress(OSError):
                 tmp_path.unlink()
-            except OSError:
-                pass
         raise ConfigError(f"Failed to write output to '{output_path}': {exc}") from None
 
 
@@ -105,8 +108,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument(
         "--repository",
-        default="repository",
+        default=os.environ.get("PIPELINEGUARD_REPOSITORY", "repository"),
         help="Repository name for reporting and event attribution",
+    )
+    scan_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Display full exception traceback on unexpected failure",
     )
 
     return parser
@@ -118,7 +126,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not args.command:
         sys.stderr.write("Error: Subcommand required. Use 'scan <paths...>'.\n")
-        return 3
+        return ExitCode.ERROR
 
     try:
         # Validate repository
@@ -184,13 +192,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     except ConfigError as exc:
         sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
-        return 3
+        return ExitCode.ERROR
     except ValueError as exc:
         sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
-        return 3
+        return ExitCode.ERROR
     except Exception as exc:  # noqa: BLE001
-        sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
-        return 3
+        if getattr(args, "debug", False):
+            import traceback
+
+            traceback.print_exc()
+        else:
+            sys.stderr.write(f"Error: {sanitize_text(str(exc))}\n")
+        return ExitCode.ERROR
 
 
 if __name__ == "__main__":

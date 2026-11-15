@@ -1,0 +1,18 @@
+name: Evasion Matrix Indirection
+on:
+  pull_request_target:
+permissions:
+  contents: read
+jobs:
+  matrix_job:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        branch: ["${{ github.head_ref }}"]
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Checkout untrusted branch via matrix context
+        run: git checkout ${{ matrix.branch }}
+

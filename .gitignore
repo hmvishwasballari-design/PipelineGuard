@@ -10,17 +10,43 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
-
 # Temporary and backup files
 *.bak
 *.pre-auth.bak
 *.before-auth-integration.bak
-
 # Frontend dependencies and generated builds
 node_modules/
 dashboard/dist/
-
 # Local IDE and operating system files
 .vscode/
 .idea/
 .DS_Store
+# Byte-compiled / optimized / DLL files
+*$py.class
+# Testing, benchmarks and coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.benchmarks/
+# Type checking and linting
+.mypy_cache/
+.ruff_cache/
+# Scan reports and output artifacts
+gitleaks-report.json
+*.sarif
+pipelineguard.sarif
+# Environments
+env/
+ENV/
+# Build and packaging
+build/
+dist/
+*.egg-info/
+*.egg
+# Editor and OS files
+*.swp
+*.swo
+*~
+Thumbs.db

@@ -1,0 +1,18 @@
+name: Evasion Composite Action
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  composite_job:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Delegate untrusted input to local composite action
+        uses: ./.github/actions/sink
+        with:
+          user_text: ${{ github.event.comment.body }}
+

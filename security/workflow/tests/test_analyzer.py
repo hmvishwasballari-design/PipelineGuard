@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download
-        # pipelineguard-ignore: PG-WF-014
+        # pipelineguard-ignore: PG-WF-014    
         run: curl http://archive.ubuntu.com/mirror
 """
         parsed = parse_workflow_text(wf, path="test.yml")
@@ -342,3 +342,4 @@ jobs:
         assert cfg.get_severity("PG-WF-002") == Severity.CRITICAL
         assert cfg.get_action("PG-WF-001") == Action.WARN
         assert cfg.get_action("PG-WF-002") == Action.BLOCK
+

@@ -19,6 +19,8 @@ from typing import Final
 from security.workflow.analyzer import _SUPPRESSION_DIRECTIVE_RE
 from security.workflow.detectors import (
     commands,
+    injection,
+    modification,
     network,
     permissions,
     supply_chain,
@@ -160,3 +162,27 @@ class TestSupplyChainAndPermissionsRegexes:
     def test_head_ref_expr_re(self) -> None:
         pathological = "github.event.pull_request." + ("head." * 1_000) + "not_ref"
         _assert_safe(permissions._HEAD_REF_EXPR_RE, pathological)
+
+
+class TestInjectionDetectorRegexes:
+    def test_github_script_re(self) -> None:
+        pathological = "actions/github-script@" + ("v" * _STRESS_LEN)
+        _assert_safe(injection._GITHUB_SCRIPT_RE, pathological, search=False)
+
+    def test_github_sink_write_re(self) -> None:
+        pathological = "printf " + ("a" * _STRESS_LEN) + ">> $GITHUB_ENV"
+        _assert_safe(injection._GITHUB_SINK_WRITE_RE, pathological)
+
+
+class TestModificationDetectorRegexes:
+    def test_workflow_write_re(self) -> None:
+        pathological = "echo 'code' >> " + ("sub/dir/" * 500) + ".github/workflows/ci.yml"
+        _assert_safe(modification._WORKFLOW_WRITE_RE, pathological)
+
+    def test_git_push_re(self) -> None:
+        pathological = "git " + ("options " * 2_000) + "push origin"
+        _assert_safe(modification._GIT_PUSH_RE, pathological)
+
+    def test_github_token_env_re(self) -> None:
+        pathological = "${{ " + (" " * 50_000) + "secrets.GITHUB_TOKEN }}"
+        _assert_safe(modification._GITHUB_TOKEN_ENV_RE, pathological)

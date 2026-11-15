@@ -23,6 +23,8 @@ from security.workflow.detectors._base import make_finding
 from security.workflow.finding import CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, Finding
 from security.workflow.models import Job, ParseResult, Step
 
+__all__ = ["detect"]
+
 # ---------------------------------------------------------------------------
 # Compiled regexes — all bounded to prevent ReDoS
 # ---------------------------------------------------------------------------
@@ -228,6 +230,129 @@ def _emit_finding(
 # ---------------------------------------------------------------------------
 
 
+def _check_pipes_and_eval(
+    run: str,
+    step: Step,
+    job: Job,
+    file: str,
+    findings: list[Finding],
+) -> None:
+    """Check dangerous piping, eval, and reverse shell patterns (PG-WF-008..011)."""
+    # PG-WF-008
+    snip = _find_curl_pipe(run)
+    if snip:
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-008",
+            snippet=snip,
+            msg="Network fetch result piped directly to a shell interpreter.",
+        )
+
+    # PG-WF-009
+    snip = _find_base64_pipe(run)
+    if snip:
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-009",
+            snippet=snip,
+            msg="Base64-decoded payload piped to a shell interpreter.",
+        )
+
+    # PG-WF-010
+    snip = _find_eval(run)
+    if snip:
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-010",
+            snippet=snip,
+            msg="eval() of a variable or command substitution — arbitrary code execution risk.",
+        )
+
+    # PG-WF-011
+    snip = _find_reverse_shell(run)
+    if snip:
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-011",
+            snippet=snip,
+            msg="Reverse-shell indicator detected — strong sign of supply-chain compromise.",
+        )
+
+
+def _check_secrets_and_executables(
+    run: str,
+    step: Step,
+    job: Job,
+    file: str,
+    findings: list[Finding],
+) -> None:
+    """Check secret exposure, unsafe chmod, and cryptominers (PG-WF-021..023)."""
+    # PG-WF-021
+    snip = _find_echo_secret(run)
+    if snip:
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-021",
+            snippet=snip,
+            msg="Secret context expression echoed in run: step — value will appear in logs.",
+        )
+
+    # set -x with likely secrets is a sub-case of PG-WF-021
+    if _has_set_x(run) and any(e.context == "secrets" for e in step.expressions):
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-021",
+            snippet=_first_line(run),
+            msg="set -x enables shell trace while secrets expressions are in scope.",
+            conf=CONFIDENCE_MEDIUM,
+        )
+
+    # PG-WF-022
+    snip = _find_chmod_download(run)
+    if snip:
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-022",
+            snippet=snip,
+            msg="Downloaded file made executable (chmod +x) without integrity verification.",
+            conf=CONFIDENCE_MEDIUM,
+        )
+
+    # PG-WF-023
+    snip = _find_miner(run)
+    if snip:
+        _emit_finding(
+            findings,
+            file=file,
+            job=job,
+            step=step,
+            rule_id="PG-WF-023",
+            snippet=snip,
+            msg=f"Known cryptominer binary '{snip}' invoked in run: step.",
+        )
+
+
 def detect(result: ParseResult) -> list[Finding]:
     """Detect dangerous command patterns in a parsed workflow.
 
@@ -253,110 +378,7 @@ def detect(result: ParseResult) -> list[Finding]:
             if not step.run:
                 continue
             run = re.sub(r"\\\r?\n\s*", " ", step.run)
-
-            # PG-WF-008
-            snip = _find_curl_pipe(run)
-            if snip:
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-008",
-                    snippet=snip,
-                    msg="Network fetch result piped directly to a shell interpreter.",
-                )
-
-            # PG-WF-009
-            snip = _find_base64_pipe(run)
-            if snip:
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-009",
-                    snippet=snip,
-                    msg="Base64-decoded payload piped to a shell interpreter.",
-                )
-
-            # PG-WF-010
-            snip = _find_eval(run)
-            if snip:
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-010",
-                    snippet=snip,
-                    msg="eval() of a variable or command substitution — arbitrary code execution risk.",
-                )
-
-            # PG-WF-011
-            snip = _find_reverse_shell(run)
-            if snip:
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-011",
-                    snippet=snip,
-                    msg="Reverse-shell indicator detected — strong sign of supply-chain compromise.",
-                )
-
-            # PG-WF-021
-            snip = _find_echo_secret(run)
-            if snip:
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-021",
-                    snippet=snip,
-                    msg="Secret context expression echoed in run: step — value will appear in logs.",
-                )
-
-            # set -x with likely secrets is a sub-case of PG-WF-021
-            if _has_set_x(run) and any(e.context == "secrets" for e in step.expressions):
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-021",
-                    snippet=_first_line(run),
-                    msg="set -x enables shell trace while secrets expressions are in scope.",
-                    conf=CONFIDENCE_MEDIUM,
-                )
-
-            # PG-WF-022
-            snip = _find_chmod_download(run)
-            if snip:
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-022",
-                    snippet=snip,
-                    msg="Downloaded file made executable (chmod +x) without integrity verification.",
-                    conf=CONFIDENCE_MEDIUM,
-                )
-
-            # PG-WF-023
-            snip = _find_miner(run)
-            if snip:
-                _emit_finding(
-                    findings,
-                    file=file,
-                    job=job,
-                    step=step,
-                    rule_id="PG-WF-023",
-                    snippet=snip,
-                    msg=f"Known cryptominer binary '{snip}' invoked in run: step.",
-                )
+            _check_pipes_and_eval(run, step, job, file, findings)
+            _check_secrets_and_executables(run, step, job, file, findings)
 
     return findings

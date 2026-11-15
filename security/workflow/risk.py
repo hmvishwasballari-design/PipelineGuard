@@ -53,36 +53,26 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from security.workflow.finding import (
-    CONFIDENCE_HIGH,
-    CONFIDENCE_LOW,
-    CONFIDENCE_MEDIUM,
-    Finding,
+from security.workflow.constants import (
+    CONFIDENCE_MULTIPLIERS,
+    GRADE_A_MAX_SCORE,
+    GRADE_B_MAX_SCORE,
+    GRADE_C_MAX_SCORE,
+    GRADE_D_MAX_SCORE,
+    MAX_RISK_SCORE,
+    SEVERITY_WEIGHTS,
+    TRIGGER_MULTIPLIERS,
 )
+from security.workflow.finding import Finding
 from security.workflow.models import Workflow
-from security.workflow.rules import Severity, lookup
+from security.workflow.rules import lookup
 
-_SEVERITY_WEIGHTS: Final[dict[Severity, float]] = {
-    Severity.CRITICAL: 40.0,
-    Severity.HIGH: 25.0,
-    Severity.MEDIUM: 15.0,
-    Severity.LOW: 6.0,
-    Severity.INFO: 2.0,
-}
-
-_CONFIDENCE_MULTIPLIERS: Final[dict[str, float]] = {
-    CONFIDENCE_HIGH: 1.0,
-    CONFIDENCE_MEDIUM: 0.8,
-    CONFIDENCE_LOW: 0.5,
-}
-
-_TRIGGER_MULTIPLIERS: Final[dict[str, float]] = {
-    "pull_request_target": 1.4,
-    "issue_comment": 1.3,
-    "workflow_run": 1.3,
-    "pull_request": 1.1,
-    "push": 1.0,
-}
+MAX_SINGLE_FINDING_COMPONENT: Final[float] = 40.0
+MAX_SUM_FINDING_COMPONENT: Final[float] = 40.0
+SUM_WEIGHT_FACTOR: Final[float] = 0.6
+DEFAULT_FINDING_WEIGHT: Final[float] = 2.0
+DEFAULT_TRIGGER_MULTIPLIER: Final[float] = 1.0
+DEFAULT_CONFIDENCE_MULTIPLIER: Final[float] = 1.0
 
 
 @dataclass(frozen=True)
@@ -104,8 +94,6 @@ def _extract_triggers(triggers_or_workflow: Workflow | Iterable[str] | None) -> 
         return set()
     if isinstance(triggers_or_workflow, Workflow):
         on = triggers_or_workflow.on
-        if on is None:
-            return set()
         if isinstance(on, str):
             return {on}
         if isinstance(on, (list, tuple)):
@@ -118,13 +106,13 @@ def _extract_triggers(triggers_or_workflow: Workflow | Iterable[str] | None) -> 
 
 def score_to_grade(score: int) -> str:
     """Map a numerical risk score (0-100) to a letter grade (A-F)."""
-    if score <= 15:
+    if score <= GRADE_A_MAX_SCORE:
         return "A"
-    if score <= 35:
+    if score <= GRADE_B_MAX_SCORE:
         return "B"
-    if score <= 55:
+    if score <= GRADE_C_MAX_SCORE:
         return "C"
-    if score <= 75:
+    if score <= GRADE_D_MAX_SCORE:
         return "D"
     return "F"
 
@@ -151,27 +139,34 @@ def calculate_risk(
     finding_weights: list[float] = []
     for f in findings:
         sev = lookup(f.rule_id).severity
-        base_w = _SEVERITY_WEIGHTS.get(sev, 2.0)
-        conf_mult = _CONFIDENCE_MULTIPLIERS.get(f.confidence, 1.0)
+        base_w = SEVERITY_WEIGHTS.get(sev, DEFAULT_FINDING_WEIGHT)
+        conf_mult = CONFIDENCE_MULTIPLIERS.get(f.confidence, DEFAULT_CONFIDENCE_MULTIPLIER)
         finding_weights.append(base_w * conf_mult)
 
     max_w = max(finding_weights)
     sum_w = sum(finding_weights)
 
-    max_component = min(max_w, 40.0)
-    sum_component = min(0.6 * sum_w, 40.0)
+    max_component = min(max_w, MAX_SINGLE_FINDING_COMPONENT)
+    sum_component = min(SUM_WEIGHT_FACTOR * sum_w, MAX_SUM_FINDING_COMPONENT)
     base_score = max_component + sum_component
 
     # 2. Trigger exposure multiplier
-    trigger_mult = 1.0
+    trigger_mult = DEFAULT_TRIGGER_MULTIPLIER
     if active_triggers:
         trigger_mult = max(
-            (_TRIGGER_MULTIPLIERS.get(t, 1.0) for t in active_triggers),
-            default=1.0,
+            (TRIGGER_MULTIPLIERS.get(t, DEFAULT_TRIGGER_MULTIPLIER) for t in active_triggers),
+            default=DEFAULT_TRIGGER_MULTIPLIER,
         )
 
     raw_score = base_score * trigger_mult
-    score = min(100, max(0, round(raw_score)))
+    score = min(MAX_RISK_SCORE, max(0, round(raw_score)))
     grade = score_to_grade(score)
 
     return RiskScore(score=score, grade=grade)
+
+
+__all__ = [
+    "RiskScore",
+    "calculate_risk",
+    "score_to_grade",
+]

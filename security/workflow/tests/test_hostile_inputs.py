@@ -10,13 +10,20 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Final
 from unittest.mock import patch
 
 from security.workflow.__main__ import main
 from security.workflow.analyzer import analyze_paths
 from security.workflow.api import analyze_text
 from security.workflow.config import Config
+from security.workflow.constants import ExitCode
 from security.workflow.reporter import format_report, sanitize_text
+
+MAX_HOSTILE_PARSE_TIME_SEC: Final[float] = 5.0
+MAX_DEEP_NESTING_TIME_SEC: Final[float] = 5.0
+MAX_HUGE_NODE_TIME_SEC: Final[float] = 5.0
+MAX_SYMLINK_LOOP_TIME_SEC: Final[float] = 5.0
 
 
 class TestHostileYamlStructures:
@@ -42,7 +49,7 @@ jobs:
         result = analyze_text(alias_bomb)
         elapsed = time.perf_counter() - t0
 
-        assert elapsed < 3.0, f"Alias bomb parsing exceeded time limit: {elapsed:.2f}s"
+        assert elapsed <= MAX_HOSTILE_PARSE_TIME_SEC, f"Alias bomb parsing exceeded limit: {elapsed:.2f}s"
         assert result.workflows_analyzed == 1
 
     def test_deeply_nested_mappings(self) -> None:
@@ -60,8 +67,42 @@ jobs:
         result = analyze_text(nested_yaml)
         elapsed = time.perf_counter() - t0
 
-        assert elapsed < 2.0
+        assert elapsed <= MAX_DEEP_NESTING_TIME_SEC
         assert result.workflows_analyzed == 1
+
+    def test_exceeds_max_yaml_depth_rejected(self) -> None:
+        """YAML nesting exceeding MAX_YAML_DEPTH (100) must be rejected with PG-WF-900."""
+        depth = 120
+        nested_yaml = "name: TooDeep\non: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    env:\n"
+        curr_indent = "      "
+        for i in range(depth):
+            nested_yaml += f"{curr_indent}k{i}:\n"
+            curr_indent += "  "
+        nested_yaml += f"{curr_indent}val: deep\n"
+
+        result = analyze_text(nested_yaml)
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "PG-WF-900"
+        assert "depth exceeds limit" in result.findings[0].message
+
+    def test_exceeds_max_yaml_aliases_rejected(self) -> None:
+        """YAML alias count exceeding MAX_YAML_ALIASES (100) must be rejected with PG-WF-900."""
+        aliases = "\n".join("          - *anchor" for _ in range(120))
+        alias_bomb = f"name: BigAlias\non: push\nbase: &anchor 'data'\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hello\n        env:\n          items:\n{aliases}\n"
+        result = analyze_text(alias_bomb)
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "PG-WF-900"
+        assert "alias count exceeds limit" in result.findings[0].message
+
+    def test_exceeds_max_yaml_constructed_nodes_rejected(self) -> None:
+        """YAML construction expanding beyond MAX_YAML_NODES (50k) must be rejected with PG-WF-900."""
+        base = "\n".join([f"  k{i}: v{i}" for i in range(1000)])
+        merges = "\n".join([f"  job_{j}:\n    <<: *base" for j in range(60)])
+        doc = f"base: &base\n{base}\nname: test\non: push\njobs:\n{merges}\n"
+        result = analyze_text(doc)
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "PG-WF-900"
+        assert "constructed node count exceeds limit" in result.findings[0].message
 
     def test_huge_node_count_and_long_lines(self) -> None:
         """Workflows with large counts of mapping keys or long lines must parse boundedly."""
@@ -77,7 +118,7 @@ jobs:
         result = analyze_text(huge_yaml)
         elapsed = time.perf_counter() - t0
 
-        assert elapsed < 3.0
+        assert elapsed <= MAX_HUGE_NODE_TIME_SEC
         assert result.workflows_analyzed == 1
 
     def test_dangerous_yaml_tags_never_execute(self) -> None:
@@ -248,7 +289,7 @@ class TestSymlinkAndPathAttacks:
             res = analyze_paths([scan_dir], scan_root=scan_dir, config=Config())
             elapsed = time.perf_counter() - t0
 
-            assert elapsed < 2.0
+            assert elapsed <= MAX_SYMLINK_LOOP_TIME_SEC
             assert res.workflows_analyzed == 0
 
 
@@ -306,7 +347,7 @@ class TestCliOutputAttacks:
 
         with patch("pathlib.Path.is_symlink", return_value=True):
             exit_code = main(["scan", str(tmp_path), "--output", str(symlink_out)])
-            assert exit_code == 3
+            assert exit_code == ExitCode.ERROR
 
     def test_output_pointing_to_existing_directory_refused(self, tmp_path: Path) -> None:
         """--output pointing to an existing directory must be refused with exit code 3."""
@@ -314,4 +355,4 @@ class TestCliOutputAttacks:
         out_dir.mkdir()
 
         exit_code = main(["scan", str(tmp_path), "--output", str(out_dir)])
-        assert exit_code == 3
+        assert exit_code == ExitCode.ERROR

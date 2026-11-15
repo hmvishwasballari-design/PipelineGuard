@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from security.workflow.constants import (
+    GRADE_A_MAX_SCORE,
+    GRADE_B_MAX_SCORE,
+    GRADE_C_MAX_SCORE,
+    GRADE_D_MAX_SCORE,
+    MAX_RISK_SCORE,
+)
 from security.workflow.finding import (
     CONFIDENCE_HIGH,
     CONFIDENCE_LOW,
@@ -34,27 +41,27 @@ class TestRiskBoundaries:
         # PG-WF-014 is LOW severity
         finding = _make_finding("PG-WF-014")
         result = calculate_risk([finding])
-        assert 0 < result.score <= 15
+        assert 0 < result.score <= GRADE_A_MAX_SCORE
         assert result.grade == "A"
 
     def test_capped_at_100_grade_f(self) -> None:
         # Many critical findings on pull_request_target
         findings = [_make_finding("PG-WF-001") for _ in range(10)]
         result = calculate_risk(findings, triggers=["pull_request_target"])
-        assert result.score == 100
+        assert result.score == MAX_RISK_SCORE
         assert result.grade == "F"
 
     def test_score_to_grade_thresholds(self) -> None:
         assert score_to_grade(0) == "A"
-        assert score_to_grade(15) == "A"
-        assert score_to_grade(16) == "B"
-        assert score_to_grade(35) == "B"
-        assert score_to_grade(36) == "C"
-        assert score_to_grade(55) == "C"
-        assert score_to_grade(56) == "D"
-        assert score_to_grade(75) == "D"
-        assert score_to_grade(76) == "F"
-        assert score_to_grade(100) == "F"
+        assert score_to_grade(GRADE_A_MAX_SCORE) == "A"
+        assert score_to_grade(GRADE_A_MAX_SCORE + 1) == "B"
+        assert score_to_grade(GRADE_B_MAX_SCORE) == "B"
+        assert score_to_grade(GRADE_B_MAX_SCORE + 1) == "C"
+        assert score_to_grade(GRADE_C_MAX_SCORE) == "C"
+        assert score_to_grade(GRADE_C_MAX_SCORE + 1) == "D"
+        assert score_to_grade(GRADE_D_MAX_SCORE) == "D"
+        assert score_to_grade(GRADE_D_MAX_SCORE + 1) == "F"
+        assert score_to_grade(MAX_RISK_SCORE) == "F"
 
 
 class TestRiskMonotonicity:
@@ -130,6 +137,23 @@ class TestTriggerExposure:
         model_risk = calculate_risk([finding], triggers=wf)
         list_risk = calculate_risk([finding], triggers=["pull_request_target"])
         assert model_risk.score == list_risk.score
+
+    def test_workflow_trigger_edge_cases(self) -> None:
+        finding = _make_finding("PG-WF-001")
+        # on is None
+        wf_none = Workflow("c.yml", "C", None, None, {}, [], [])
+        assert calculate_risk([finding], triggers=wf_none).score > 0
+
+        # on is single string
+        wf_str = Workflow("c.yml", "C", "pull_request_target", None, {}, [], [])
+        assert calculate_risk([finding], triggers=wf_str).score == calculate_risk([finding], triggers=["pull_request_target"]).score
+
+        # on is unexpected type (e.g. int)
+        wf_int = Workflow("c.yml", "C", 12345, None, {}, [], [])
+        assert calculate_risk([finding], triggers=wf_int).score > 0
+
+        # triggers is None directly
+        assert calculate_risk([finding], triggers=None).score > 0
 
 
 class TestConfidenceImpact:

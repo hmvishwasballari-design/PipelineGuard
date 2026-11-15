@@ -31,6 +31,7 @@ from security.workflow.analyzer import (
     analyze_workflow,
 )
 from security.workflow.config import Config, ConfigError, load_config
+from security.workflow.constants import ExitCode
 from security.workflow.events import (
     finding_to_event,
     validate_repository_name,
@@ -39,6 +40,7 @@ from security.workflow.events import (
     to_events as _to_events,
 )
 from security.workflow.finding import Finding
+from security.workflow.limits import Limits
 from security.workflow.parser import parse_workflow_text
 from security.workflow.risk import RiskScore, calculate_risk
 from security.workflow.rules import (
@@ -99,6 +101,29 @@ def analyze_text(
         1
     """
     cfg = config if config is not None else Config()
+    text_bytes = len(text.encode("utf-8"))
+    if text_bytes > cfg.max_file_size:
+        return AnalysisResult(
+            findings=(
+                Finding(
+                    rule_id="PG-WF-900",
+                    file=filename,
+                    line=None,
+                    column=None,
+                    job_id=None,
+                    step_name=None,
+                    snippet="",
+                    message=(
+                        f"Workflow text size ({text_bytes} bytes) "
+                        f"exceeds maximum allowed limit of {cfg.max_file_size} bytes"
+                    ),
+                    confidence="HIGH",
+                    evidence={"size": text_bytes, "limit": cfg.max_file_size},
+                ),
+            ),
+            suppressed=(),
+            workflows_analyzed=1,
+        )
     parse_result = parse_workflow_text(text, path=filename)
     return analyze_workflow(parse_result, config=cfg)
 
@@ -140,7 +165,9 @@ __all__ = [
     "AnalysisResult",
     "Config",
     "ConfigError",
+    "ExitCode",
     "Finding",
+    "Limits",
     "RiskScore",
     "Rule",
     "Severity",

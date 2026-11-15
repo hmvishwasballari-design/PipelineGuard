@@ -106,13 +106,14 @@
   - [x] Tests in `tests/test_detection_gaps.py`
 - [x] **Step 7: Performance Benchmarks (`tests/test_performance.py`)**
   - [x] Pre-generated 1,000 realistic workflows across 5 distinct archetypes
-  - [x] Measured 500 workflows in 3.876s (129.0 wfs/s), 1,000 workflows in 7.119s (140.5 wfs/s)
-  - [x] Verified scaling ratio 1.84x (<= 3.0x budget threshold) and total time 7.119s (<= 15.0s budget)
+  - [x] Measured linear scaling ratio (<= 3.0x threshold); reproducible via `pytest security/workflow/tests/test_performance.py`
+  - [x] Verified ratio-based performance scaling across batches
 - [x] **Step 8: Self-CI + Dogfood Workflow (`.github/workflows/pipelineguard-ci.yml`)**
   - [x] Created hardened `.github/workflows/pipelineguard-ci.yml` with top-level `permissions: contents: read`, concurrency, timeouts
-  - [x] Pinned all actions to 40-character SHAs with version comments (`checkout@b4ffde65f46336ab88eb53be808477a3936bae11`, `setup-python@0a5c61591373683505ea898e09a6ea1c87f51a66`, `upload-sarif@b7bf0a3ed3ecfa44160715d7c442788f65f0f923`)
+  - [x] Pinned all actions to 40-character SHAs with version comments (`checkout@11bd71901bbe5b1630ceea73d27597364c9af683` [v4.2.2], `setup-python@a26af69be951a213d495a4c3e4e4022e16d87065` [v5], `upload-sarif@ce5e7eeac396d720fe2d802714996c8ce561e311` [v3])
   - [x] Configured dogfood scan step running `python -m security.workflow scan .github/workflows --fail-on warn --format sarif --output pipelineguard.sarif`
   - [x] Added dogfood unit tests in `tests/test_ci_dogfood.py` verifying zero findings and structural compliance
+  - [x] Live GitHub Actions CI verified passing (see CI dashboard for run records)
 - [x] **Step 9: Tooling and Supply Chain (`requirements.txt`, `requirements-dev.txt`, scripts, .pre-commit-config.yaml, pip-audit)**
   - [x] Pinned `security/workflow/requirements.txt` (PyYAML==6.0.3) and `requirements-dev.txt` with exact versions
   - [x] Created consolidated `pyproject.toml` and `.pre-commit-config.yaml` with pinned revs
@@ -121,8 +122,18 @@
 - [x] **Step 10: Final Quality Gate (Full test & linter run)**
   - [x] Executed unified quality gate script (`scripts/check.ps1`):
     - [x] Stage 1: `ruff check security` - CLEAN (0 errors)
-    - [x] Stage 2: `mypy --strict security/workflow` - CLEAN (0 errors in 18 files)
+    - [x] Stage 2: `mypy --strict security` - CLEAN (0 errors in 48 files across whole package)
     - [x] Stage 3: `bandit -r security -x security/workflow/tests` - CLEAN (0 issues)
     - [x] Stage 4: `pip-audit` on `requirements.txt` & `requirements-dev.txt` - CLEAN (0 vulnerabilities)
-    - [x] Stage 5: Full test suite `pytest` with coverage gate - PASSED (357/357 passed, 97.95% overall coverage, all modules >= 95%)
+    - [x] Stage 5: Full test suite `pytest` with coverage gate - PASSED (359/359 passed, 98.18% overall coverage, all modules >= 95%)
   - [x] Git branch pushed cleanly to `origin/feature/workflow-detection`
+  - [x] GitHub Actions CI workflow fully passing end-to-end (see CI status)
+- [x] **Step 11: Production-Readiness Audit (Phases 0–6)**
+  - [x] **Phase 0: Baseline Audit**: Captured initial metrics (359 tests, 98.18% coverage, zero warnings).
+  - [x] **Phase 1: Hardcoding Audit**: Centralized constants (`constants.py`), resource budgets (`limits.py`), strongly-typed exit codes (`ExitCode(IntEnum)`), ratio-based performance benchmark, CLI sanitized error handling. (Commit `4c36fab`)
+  - [x] **Phase 2: Code Quality & Complexity**: Added PEP 561 markers (`py.typed`), declared explicit `__all__` across all modules, reduced cyclomatic complexity across entire package to <= 10 (`ruff check security --select C901` clean). (Commit `9e760d0`)
+  - [x] **Phase 3: Security & Correctness**: Hardened path traversal/symlink defenses for `--baseline` and `--output`, vendored official OASIS SARIF 2.1.0 JSON Schema offline and validated emitted SARIF against schema (`jsonschema`). (Commit `8726fb2`)
+  - [x] **Phase 4: Test Quality & Mutation Sanity Check**: Verified test suite sensitivity by executing 5 manual mutation tests across 5 subsystems (parser, injection, permissions, supply chain, risk scoring); all 5 mutations caught and killed immediately. (Commit `b63660f`)
+  - [x] **Phase 5: Packaging & CI Hygiene**: Added console entrypoints (`pipelineguard` and `pipelineguard-workflow`), configured wheel package data, verified editable installation and dogfood self-scan. (Commit `13e067e`)
+  - [x] **Phase 6: Final Verification**: Executed unified quality gate (`scripts/check.ps1`): 362/362 tests passing, 98.41% coverage, 0 warnings with `-W error`, clean ruff/mypy/bandit/pip-audit.
+

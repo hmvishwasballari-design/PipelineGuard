@@ -33,6 +33,11 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from security.workflow.limits import (
+    MAX_SNIPPET_LENGTH_CHARS,
+    SNIPPET_TRUNCATION_LIMIT_CHARS,
+)
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -118,8 +123,8 @@ def _safe_snippet(raw: str) -> str:
         Sanitized, redacted, length-bounded snippet.
     """
     cleaned = _redact(_sanitize(raw))
-    if len(cleaned) > 512:
-        cleaned = cleaned[:509] + "..."
+    if len(cleaned) > MAX_SNIPPET_LENGTH_CHARS:
+        cleaned = cleaned[:SNIPPET_TRUNCATION_LIMIT_CHARS] + "..."
     return cleaned
 
 
@@ -161,7 +166,7 @@ class Finding:
         # Bypass frozen to sanitize — use object.__setattr__ only here.
         object.__setattr__(self, "file", _sanitize(self.file))
         object.__setattr__(self, "snippet", _safe_snippet(self.snippet))
-        object.__setattr__(self, "message", _sanitize(self.message))
+        object.__setattr__(self, "message", _redact(_sanitize(self.message)))
         if self.job_id is not None:
             object.__setattr__(self, "job_id", _sanitize(self.job_id))
         if self.step_name is not None:
@@ -186,12 +191,18 @@ class Finding:
         Returns:
             A 64-character lowercase hex string.
         """
+        cached: str | None = getattr(self, "_cached_fp", None)
+        if cached is not None:
+            return cached
+
         norm_file = self.file.replace("\\", "/").lower()
         norm_line = str(self.line) if self.line is not None else "none"
         norm_snippet = re.sub(r"\s+", " ", self.snippet.lower()).strip()
 
         payload = f"{self.rule_id}\x00{norm_file}\x00{norm_line}\x00{norm_snippet}"
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        object.__setattr__(self, "_cached_fp", digest)
+        return digest
 
     # ------------------------------------------------------------------
     # Sorting key (for stable output)
@@ -206,3 +217,11 @@ class Finding:
             A 3-tuple ``(file, line, rule_id)``.
         """
         return (self.file, self.line or 0, self.rule_id)
+
+
+__all__ = [
+    "CONFIDENCE_HIGH",
+    "CONFIDENCE_LOW",
+    "CONFIDENCE_MEDIUM",
+    "Finding",
+]

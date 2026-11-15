@@ -7,6 +7,11 @@ from pathlib import Path
 import pytest
 
 from security.workflow.config import Config, ConfigError, load_config, parse_config_dict
+from security.workflow.constants import ExitCode
+from security.workflow.limits import (
+    DEFAULT_MAX_FILE_COUNT,
+    DEFAULT_MAX_FILE_SIZE_BYTES,
+)
 from security.workflow.rules import Action, Severity
 
 
@@ -14,8 +19,8 @@ class TestConfigDefaults:
     def test_default_config(self) -> None:
         cfg = Config()
         assert cfg.fail_on == "block"
-        assert cfg.max_file_count == 1000
-        assert cfg.max_file_size == 1_048_576
+        assert cfg.max_file_count == DEFAULT_MAX_FILE_COUNT
+        assert cfg.max_file_size == DEFAULT_MAX_FILE_SIZE_BYTES
         assert cfg.is_rule_enabled("PG-WF-001") is True
         assert cfg.get_severity("PG-WF-001") == Severity.CRITICAL
         assert cfg.get_action("PG-WF-001") == Action.BLOCK
@@ -157,9 +162,9 @@ class TestInvalidConfigCases:
             load_config(bad_yaml)
 
     def test_config_error_exit_code(self) -> None:
-        assert ConfigError.exit_code == 3
+        assert ConfigError.exit_code == ExitCode.ERROR
         err = ConfigError("test")
-        assert err.exit_code == 3
+        assert err.exit_code == ExitCode.ERROR
 
     def test_parse_config_dict_none(self) -> None:
         cfg = parse_config_dict(None)
@@ -206,3 +211,65 @@ class TestInvalidConfigCases:
         (tmp_path / "pipelineguard.yml").write_text("fail_on: warn\n", encoding="utf-8")
         cfg = load_config(None)
         assert cfg.fail_on == "warn"
+
+
+class TestConfigPrecedenceAndEnv:
+    def test_env_fail_on_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIPELINEGUARD_FAIL_ON", "warn")
+        cfg = load_config(None)
+        assert cfg.fail_on == "warn"
+
+    def test_env_file_count_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIPELINEGUARD_MAX_FILE_COUNT", "42")
+        cfg = load_config(None)
+        assert cfg.max_file_count == 42
+
+    def test_env_file_size_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIPELINEGUARD_MAX_FILE_SIZE", "12345")
+        cfg = load_config(None)
+        assert cfg.max_file_size == 12345
+
+    def test_env_config_path_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg_file = tmp_path / "custom.yml"
+        cfg_file.write_text("fail_on: never\n", encoding="utf-8")
+        monkeypatch.setenv("PIPELINEGUARD_CONFIG", str(cfg_file))
+        cfg = load_config(None)
+        assert cfg.fail_on == "never"
+
+    def test_full_precedence_defaults_file_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # File overrides defaults
+        cfg_file = tmp_path / "pipelineguard.yml"
+        cfg_file.write_text("fail_on: warn\nmax_file_count: 50\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+
+        # Env overrides file
+        monkeypatch.setenv("PIPELINEGUARD_FAIL_ON", "never")
+        cfg = load_config(None)
+        assert cfg.fail_on == "never"  # from env
+        assert cfg.max_file_count == 50  # from file
+
+    def test_invalid_env_fail_on_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIPELINEGUARD_FAIL_ON", "bogus")
+        with pytest.raises(ConfigError, match="Invalid 'PIPELINEGUARD_FAIL_ON' value"):
+            load_config(None)
+
+    def test_invalid_env_file_count_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIPELINEGUARD_MAX_FILE_COUNT", "-5")
+        with pytest.raises(ConfigError, match="Invalid 'PIPELINEGUARD_MAX_FILE_COUNT' value"):
+            load_config(None)
+
+    def test_invalid_env_file_size_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PIPELINEGUARD_MAX_FILE_SIZE", "not_a_number")
+        with pytest.raises(ConfigError, match="Invalid 'PIPELINEGUARD_MAX_FILE_SIZE' value"):
+            load_config(None)
+
+    def test_config_post_init_validation(self) -> None:
+        with pytest.raises(ConfigError, match="Invalid 'fail_on' value"):
+            Config(fail_on="invalid")
+
+        with pytest.raises(ConfigError, match="max_file_count must be a positive integer"):
+            Config(max_file_count=-1)
+
+        with pytest.raises(ConfigError, match="max_file_size must be a positive integer"):
+            Config(max_file_size=0)
+

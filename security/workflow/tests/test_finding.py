@@ -177,6 +177,12 @@ class TestFindingConstruction:
         assert token not in f.snippet
         assert "[REDACTED]" in f.snippet
 
+    def test_redacts_secret_in_message(self) -> None:
+        token = "ghp_" + "D" * 36
+        f = self._minimal(message=f"Leak detected for token {token}")
+        assert token not in f.message
+        assert "[REDACTED]" in f.message
+
     def test_evidence_defaults_to_empty_dict(self) -> None:
         f = self._minimal()
         assert f.evidence == {}

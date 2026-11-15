@@ -17,7 +17,9 @@ from typing import Any, Final
 
 from security.workflow.detectors._base import make_finding, trigger_set
 from security.workflow.finding import CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, Finding
-from security.workflow.models import ParseResult, Step
+from security.workflow.models import Job, ParseResult, Step
+
+__all__ = ["detect"]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -106,10 +108,7 @@ def _step_checks_out_head_ref(step: Step) -> bool:
     if isinstance(ref_val, str) and _HEAD_REF_EXPR_RE.search(ref_val):
         return True
     # Also check expressions captured on this step
-    for expr in step.expressions:
-        if _HEAD_REF_EXPR_RE.search(expr.text):
-            return True
-    return False
+    return any(_HEAD_REF_EXPR_RE.search(expr.text) for expr in step.expressions)
 
 
 
@@ -118,6 +117,89 @@ def _step_checks_out_head_ref(step: Step) -> bool:
 # ---------------------------------------------------------------------------
 # Public detector
 # ---------------------------------------------------------------------------
+
+
+def _check_job(
+    job: Job,
+    file: str,
+    triggers: frozenset[str],
+) -> list[Finding]:
+    """Check a single job for permission-related issues (PG-WF-005, 006, 007)."""
+    findings: list[Finding] = []
+    is_broad_job, reason_job = _has_write_scope(job.permissions)
+
+    # Operational exception: upload-sarif job requiring security-events: write
+    if (
+        is_broad_job
+        and reason_job == "security-events: write"
+        and any(
+            step.uses is not None and bool(_SARIF_UPLOAD_RE.match(step.uses.strip()))
+            for step in job.steps
+        )
+    ):
+        is_broad_job = False
+
+    if is_broad_job:
+        findings.append(
+            make_finding(
+                rule_id="PG-WF-005",
+                file=file,
+                line=job.line,
+                job_id=job.id,
+                snippet=f"jobs.{job.id}.permissions:\n  {reason_job}",
+                message=(
+                    f"Job '{job.id}' permission '{reason_job}' grants write access."
+                ),
+                confidence=CONFIDENCE_MEDIUM,
+                evidence={"permission": reason_job, "job": job.id},
+            )
+        )
+
+    # PG-WF-006: Pwn-request (pull_request_target + head-ref checkout)
+    if "pull_request_target" in triggers:
+        for step in job.steps:
+            if _step_checks_out_head_ref(step):
+                findings.append(
+                    make_finding(
+                        rule_id="PG-WF-006",
+                        file=file,
+                        line=step.line,
+                        job_id=job.id,
+                        step_name=step.name,
+                        snippet=f"uses: {step.uses}",
+                        message=(
+                            "Pwn-request: workflow triggered by "
+                            "'pull_request_target' checks out the PR head ref, "
+                            "running untrusted code with write permissions."
+                        ),
+                        confidence=CONFIDENCE_HIGH,
+                        evidence={
+                            "trigger": "pull_request_target",
+                            "uses": step.uses,
+                            "ref": step.with_inputs.get("ref", ""),
+                        },
+                    )
+                )
+
+    # PG-WF-007: secrets: inherit
+    if isinstance(job.secrets, str) and job.secrets.lower() == "inherit":
+        findings.append(
+            make_finding(
+                rule_id="PG-WF-007",
+                file=file,
+                line=job.line,
+                job_id=job.id,
+                snippet=f"jobs.{job.id}:\n  secrets: inherit",
+                message=(
+                    f"Job '{job.id}' uses 'secrets: inherit', passing all "
+                    "caller secrets to the called workflow."
+                ),
+                confidence=CONFIDENCE_HIGH,
+                evidence={"job": job.id},
+            )
+        )
+
+    return findings
 
 
 def detect(result: ParseResult) -> list[Finding]:
@@ -138,9 +220,7 @@ def detect(result: ParseResult) -> list[Finding]:
     triggers = trigger_set(workflow)
     findings: list[Finding] = []
 
-    # ------------------------------------------------------------------
     # PG-WF-004: Missing top-level permissions block
-    # ------------------------------------------------------------------
     if workflow.permissions is None:
         findings.append(
             make_finding(
@@ -156,9 +236,7 @@ def detect(result: ParseResult) -> list[Finding]:
             )
         )
 
-    # ------------------------------------------------------------------
-    # PG-WF-005: Overly broad permissions
-    # ------------------------------------------------------------------
+    # PG-WF-005: Overly broad top-level permissions
     is_broad, reason = _has_write_scope(workflow.permissions)
     if is_broad:
         findings.append(
@@ -174,80 +252,6 @@ def detect(result: ParseResult) -> list[Finding]:
         )
 
     for job in workflow.jobs:
-        is_broad_job, reason_job = _has_write_scope(job.permissions)
-        # Operational exception: upload-sarif job requiring security-events: write
-        if (
-            is_broad_job
-            and reason_job == "security-events: write"
-            and any(
-                step.uses is not None and bool(_SARIF_UPLOAD_RE.match(step.uses.strip()))
-                for step in job.steps
-            )
-        ):
-            is_broad_job = False
-
-        if is_broad_job:
-            findings.append(
-                make_finding(
-                    rule_id="PG-WF-005",
-                    file=file,
-                    line=job.line,
-                    job_id=job.id,
-                    snippet=f"jobs.{job.id}.permissions:\n  {reason_job}",
-                    message=(
-                        f"Job '{job.id}' permission '{reason_job}' grants write access."
-                    ),
-                    confidence=CONFIDENCE_MEDIUM,
-                    evidence={"permission": reason_job, "job": job.id},
-                )
-            )
-
-        # ------------------------------------------------------------------
-        # PG-WF-006: Pwn-request (pull_request_target + head-ref checkout)
-        # ------------------------------------------------------------------
-        if "pull_request_target" in triggers:
-            for step in job.steps:
-                if _step_checks_out_head_ref(step):
-                    findings.append(
-                        make_finding(
-                            rule_id="PG-WF-006",
-                            file=file,
-                            line=step.line,
-                            job_id=job.id,
-                            step_name=step.name,
-                            snippet=f"uses: {step.uses}",
-                            message=(
-                                "Pwn-request: workflow triggered by "
-                                "'pull_request_target' checks out the PR head ref, "
-                                "running untrusted code with write permissions."
-                            ),
-                            confidence=CONFIDENCE_HIGH,
-                            evidence={
-                                "trigger": "pull_request_target",
-                                "uses": step.uses,
-                                "ref": step.with_inputs.get("ref", ""),
-                            },
-                        )
-                    )
-
-        # ------------------------------------------------------------------
-        # PG-WF-007: secrets: inherit
-        # ------------------------------------------------------------------
-        if isinstance(job.secrets, str) and job.secrets.lower() == "inherit":
-            findings.append(
-                make_finding(
-                    rule_id="PG-WF-007",
-                    file=file,
-                    line=job.line,
-                    job_id=job.id,
-                    snippet=f"jobs.{job.id}:\n  secrets: inherit",
-                    message=(
-                        f"Job '{job.id}' uses 'secrets: inherit', passing all "
-                        "caller secrets to the called workflow."
-                    ),
-                    confidence=CONFIDENCE_HIGH,
-                    evidence={"job": job.id},
-                )
-            )
+        findings.extend(_check_job(job, file, triggers))
 
     return findings

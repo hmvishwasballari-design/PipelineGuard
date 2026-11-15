@@ -13,6 +13,17 @@ import re
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
+from security.workflow.constants import (
+    EVENT_SCHEMA_VERSION,
+    SARIF_INFORMATION_URI,
+    SARIF_LEVEL_MAP,
+    SARIF_SCHEMA_URL,
+    SARIF_SCHEMA_VERSION,
+    SEVERITY_ORDER,
+    TOOL_NAME,
+    TOOL_VERSION,
+    ExitCode,
+)
 from security.workflow.finding import Finding
 from security.workflow.risk import calculate_risk
 from security.workflow.rules import REGISTRY, Action, Severity, lookup
@@ -27,21 +38,9 @@ _CONTROL_CHARS_RE = re.compile(
     r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x1b\u200e\u200f\u202a-\u202e\u2066-\u2069]"
 )
 
-_SARIF_LEVEL_MAP = {
-    Severity.CRITICAL: "error",
-    Severity.HIGH: "error",
-    Severity.MEDIUM: "warning",
-    Severity.LOW: "note",
-    Severity.INFO: "note",
-}
-
-_SEVERITY_ORDER: dict[Severity, int] = {
-    Severity.CRITICAL: 5,
-    Severity.HIGH: 4,
-    Severity.MEDIUM: 3,
-    Severity.LOW: 2,
-    Severity.INFO: 1,
-}
+# Retained aliases for backward compatibility if imported internally
+_SARIF_LEVEL_MAP = SARIF_LEVEL_MAP
+_SEVERITY_ORDER = SEVERITY_ORDER
 
 
 def sanitize_text(text: str) -> str:
@@ -76,12 +75,12 @@ def compute_exit_code(
     """
     threshold = (fail_on or (config.fail_on if config else "block")).lower()
     if threshold == "never":
-        return 0
+        return ExitCode.SUCCESS
 
     base_set = baselined_fingerprints or set()
     active_findings = [f for f in result.findings if f.fingerprint() not in base_set]
     if not active_findings:
-        return 0
+        return ExitCode.SUCCESS
 
     has_block = False
     has_warn = False
@@ -95,12 +94,76 @@ def compute_exit_code(
             has_warn = True
 
     if has_block:
-        return 1
+        return ExitCode.BLOCK
 
     if has_warn and threshold == "warn":
-        return 2
+        return ExitCode.WARN
 
-    return 0
+    return ExitCode.SUCCESS
+
+
+def _format_finding_entry(
+    f: Finding,
+    config: Config | None,
+    base_set: set[str] | frozenset[str],
+) -> list[str]:
+    """Format a single finding as sanitized report lines."""
+    rule = lookup(f.rule_id)
+    sev = config.get_severity(f.rule_id) if config else rule.severity
+    act = config.get_action(f.rule_id) if config else rule.action
+    is_base = f.fingerprint() in base_set
+    base_badge = " [BASELINED]" if is_base else ""
+
+    loc_str = f"line {f.line}" if f.line is not None else "file level"
+    header = (
+        f"  [{sev.name}] ({act.name}){base_badge} {f.rule_id} "
+        f"at {loc_str}: {rule.title}"
+    )
+    lines = [sanitize_text(header)]
+    if f.message:
+        lines.append(f"    Message:     {sanitize_text(f.message)}")
+    if f.snippet:
+        lines.append(f"    Snippet:     {sanitize_text(f.snippet)}")
+    if rule.remediation:
+        lines.append(f"    Remediation: {sanitize_text(rule.remediation)}")
+    lines.append("")
+    return lines
+
+
+def _format_summary_section(
+    result: AnalysisResult,
+    config: Config | None,
+) -> list[str]:
+    """Format the report summary footer lines."""
+    block_count = 0
+    warn_count = 0
+    sev_counts: dict[str, int] = defaultdict(int)
+
+    for f in result.findings:
+        act = config.get_action(f.rule_id) if config else lookup(f.rule_id).action
+        sev = config.get_severity(f.rule_id) if config else lookup(f.rule_id).severity
+        if act == Action.BLOCK:
+            block_count += 1
+        elif act == Action.WARN:
+            warn_count += 1
+        sev_counts[sev.name] += 1
+
+    lines = [
+        "=" * 60,
+        (
+            f"Summary: {len(result.findings)} finding(s) "
+            f"({block_count} BLOCK, {warn_count} WARN) across {result.workflows_analyzed} workflow(s)"
+        ),
+    ]
+    sev_summary = ", ".join(
+        f"{s.name}: {sev_counts[s.name]}" for s in Severity if sev_counts[s.name] > 0
+    )
+    if sev_summary:
+        lines.append(f"Severities: {sev_summary}")
+    if result.suppressed:
+        lines.append(f"Suppressed: {len(result.suppressed)} finding(s) with documented rationale")
+
+    return lines
 
 
 def report_text(
@@ -132,12 +195,10 @@ def report_text(
         lines.append(f"Workflows scanned: {result.workflows_analyzed}")
         return "\n".join(lines)
 
-    # Group findings by file
     findings_by_file: dict[str, list[Finding]] = defaultdict(list)
     for f in result.findings:
         findings_by_file[f.file].append(f)
 
-    # Sort files alphabetically
     for file_path in sorted(findings_by_file):
         lines.append("")
         lines.append(f"File: {sanitize_text(file_path)}")
@@ -150,56 +211,10 @@ def report_text(
             return (-_SEVERITY_ORDER.get(sev, 0), f.line or 0, f.rule_id)
 
         file_findings.sort(key=_finding_sort_key)
-
         for f in file_findings:
-            rule = lookup(f.rule_id)
-            sev = config.get_severity(f.rule_id) if config else rule.severity
-            act = config.get_action(f.rule_id) if config else rule.action
-            is_base = f.fingerprint() in base_set
-            base_badge = " [BASELINED]" if is_base else ""
+            lines.extend(_format_finding_entry(f, config, base_set))
 
-            loc_str = f"line {f.line}" if f.line is not None else "file level"
-            header = (
-                f"  [{sev.name}] ({act.name}){base_badge} {f.rule_id} "
-                f"at {loc_str}: {rule.title}"
-            )
-            lines.append(sanitize_text(header))
-
-            if f.message:
-                lines.append(f"    Message:     {sanitize_text(f.message)}")
-            if f.snippet:
-                lines.append(f"    Snippet:     {sanitize_text(f.snippet)}")
-            if rule.remediation:
-                lines.append(f"    Remediation: {sanitize_text(rule.remediation)}")
-            lines.append("")
-
-    # Summary counts
-    block_count = 0
-    warn_count = 0
-    sev_counts: dict[str, int] = defaultdict(int)
-
-    for f in result.findings:
-        act = config.get_action(f.rule_id) if config else lookup(f.rule_id).action
-        sev = config.get_severity(f.rule_id) if config else lookup(f.rule_id).severity
-        if act == Action.BLOCK:
-            block_count += 1
-        elif act == Action.WARN:
-            warn_count += 1
-        sev_counts[sev.name] += 1
-
-    lines.append("=" * 60)
-    lines.append(
-        f"Summary: {len(result.findings)} finding(s) "
-        f"({block_count} BLOCK, {warn_count} WARN) across {result.workflows_analyzed} workflow(s)"
-    )
-    sev_summary = ", ".join(
-        f"{s.name}: {sev_counts[s.name]}" for s in Severity if sev_counts[s.name] > 0
-    )
-    if sev_summary:
-        lines.append(f"Severities: {sev_summary}")
-    if result.suppressed:
-        lines.append(f"Suppressed: {len(result.suppressed)} finding(s) with documented rationale")
-
+    lines.extend(_format_summary_section(result, config))
     return "\n".join(lines)
 
 
@@ -293,7 +308,7 @@ def report_json(
         )
 
     payload: dict[str, Any] = {
-        "schema_version": "1.0.0",
+        "schema_version": EVENT_SCHEMA_VERSION,
         "repository": sanitize_text(repository),
         "workflows_analyzed": result.workflows_analyzed,
         "summary": {
@@ -390,22 +405,24 @@ def report_sarif(
             }
         )
 
-    sarif_payload: dict[str, Any] = {
-        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-        "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "PipelineGuard",
-                        "informationUri": "https://pipelineguard.io",
-                        "version": "1.0.0",
-                        "rules": sarif_rules,
-                    }
-                },
-                "results": sarif_results,
+    run_payload: dict[str, Any] = {
+        "tool": {
+            "driver": {
+                "name": TOOL_NAME,
+                "informationUri": SARIF_INFORMATION_URI,
+                "version": TOOL_VERSION,
+                "rules": sarif_rules,
             }
-        ],
+        },
+        "results": sarif_results,
+    }
+    if repository:
+        run_payload["properties"] = {"repository": repository}
+
+    sarif_payload: dict[str, Any] = {
+        "$schema": SARIF_SCHEMA_URL,
+        "version": SARIF_SCHEMA_VERSION,
+        "runs": [run_payload],
     }
 
     return json.dumps(sarif_payload, indent=2)
@@ -442,3 +459,13 @@ def format_report(
             baselined_fingerprints=baselined_fingerprints,
         )
     raise ValueError(f"Unsupported format '{format_name}'. Must be 'text', 'json', or 'sarif'.")
+
+
+__all__ = [
+    "compute_exit_code",
+    "format_report",
+    "report_json",
+    "report_sarif",
+    "report_text",
+    "sanitize_text",
+]

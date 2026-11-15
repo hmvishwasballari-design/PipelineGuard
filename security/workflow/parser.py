@@ -14,8 +14,13 @@ from typing import Any
 
 import yaml
 from yaml.constructor import ConstructorError
-from yaml.nodes import MappingNode
+from yaml.nodes import MappingNode, SequenceNode
 
+from security.workflow.limits import (
+    MAX_YAML_ALIASES,
+    MAX_YAML_DEPTH,
+    MAX_YAML_NODES,
+)
 from security.workflow.models import Expression, Job, ParseResult, Step, Workflow
 
 _EXPRESSION_RE = re.compile(r"\$\{\{((?:[^{}]|\{(?!\{)|\}(?!\})){0,2000}?)\}\}")
@@ -55,6 +60,41 @@ class LineCapturingLoader(WorkflowSafeLoader):
         super().__init__(stream)
         self.lines: dict[int, int] = {}
         self.key_lines: dict[int, dict[Any, int]] = {}
+        self.node_count: int = 0
+        self.constructed_count: int = 0
+        self.alias_count: int = 0
+        self.depth: int = 0
+
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        self.node_count += 1
+        if self.node_count > MAX_YAML_NODES:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML node count exceeds limit of {MAX_YAML_NODES}",
+                None,
+            )
+        if self.check_event(yaml.AliasEvent):
+            self.alias_count += 1
+            if self.alias_count > MAX_YAML_ALIASES:
+                raise ConstructorError(
+                    None,
+                    None,
+                    f"YAML alias count exceeds limit of {MAX_YAML_ALIASES}",
+                    None,
+                )
+        if self.depth > MAX_YAML_DEPTH:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML nesting depth exceeds limit of {MAX_YAML_DEPTH}",
+                None,
+            )
+        self.depth += 1
+        try:
+            return super().compose_node(parent, index)
+        finally:
+            self.depth -= 1
 
     def construct_mapping(self, node: MappingNode, deep: bool = False) -> dict[Any, Any]:
         if not isinstance(node, MappingNode):
@@ -65,6 +105,14 @@ class LineCapturingLoader(WorkflowSafeLoader):
                 node.start_mark,
             )
         self.flatten_mapping(node)
+        self.constructed_count += len(node.value)
+        if self.constructed_count > MAX_YAML_NODES:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML constructed node count exceeds limit of {MAX_YAML_NODES}",
+                node.start_mark,
+            )
         mapping: dict[Any, Any] = {}
         key_lines: dict[Any, int] = {}
         for key_node, value_node in node.value:
@@ -77,6 +125,17 @@ class LineCapturingLoader(WorkflowSafeLoader):
         self.lines[id(mapping)] = node.start_mark.line + 1
         self.key_lines[id(mapping)] = key_lines
         return mapping
+
+    def construct_sequence(self, node: SequenceNode, deep: bool = False) -> list[Any]:
+        self.constructed_count += len(node.value)
+        if self.constructed_count > MAX_YAML_NODES:
+            raise ConstructorError(
+                None,
+                None,
+                f"YAML constructed node count exceeds limit of {MAX_YAML_NODES}",
+                node.start_mark,
+            )
+        return super().construct_sequence(node, deep=deep)
 
 
 def parse_workflow(path: str | Path) -> ParseResult:
@@ -96,7 +155,7 @@ def parse_workflow_text(text: str, path: str = "<string>") -> ParseResult:
     """Parse workflow YAML from a string. Does not raise on bad YAML."""
     try:
         data, lines, key_lines = _safe_load_with_lines(text)
-    except yaml.YAMLError as exc:
+    except (yaml.YAMLError, RecursionError) as exc:
         return ParseResult(workflow=None, error=_format_yaml_error(path, exc), raw_text=text, path=path)
 
     if data is None:
@@ -180,7 +239,7 @@ def _safe_load_with_lines(
         loader.dispose()
 
 
-def _format_yaml_error(path: str, exc: yaml.YAMLError) -> str:
+def _format_yaml_error(path: str, exc: Exception) -> str:
     line = None
     mark = getattr(exc, "problem_mark", None)
     if mark is not None:
@@ -308,13 +367,19 @@ def _optional_str(value: Any) -> str | None:
 
 def _collect_expressions(value: Any, default_line: int | None) -> list[Expression]:
     found: list[Expression] = []
-    _walk_expressions(value, default_line, found)
+    seen: set[int] = set()
+    _walk_expressions(value, default_line, found, seen)
     return found
 
 
 def _walk_expressions(
-    value: Any, line: int | None, found: list[Expression]
+    value: Any, line: int | None, found: list[Expression], seen: set[int]
 ) -> None:
+    val_id = id(value)
+    if isinstance(value, (dict, list)):
+        if val_id in seen:
+            return
+        seen.add(val_id)
     if isinstance(value, str):
         for match in _EXPRESSION_RE.finditer(value):
             inner = match.group(1).strip()
@@ -324,8 +389,16 @@ def _walk_expressions(
         return
     if isinstance(value, dict):
         for nested in value.values():
-            _walk_expressions(nested, line, found)
+            _walk_expressions(nested, line, found, seen)
         return
     if isinstance(value, list):
         for nested in value:
-            _walk_expressions(nested, line, found)
+            _walk_expressions(nested, line, found, seen)
+
+
+__all__ = [
+    "LineCapturingLoader",
+    "WorkflowSafeLoader",
+    "parse_workflow",
+    "parse_workflow_text",
+]

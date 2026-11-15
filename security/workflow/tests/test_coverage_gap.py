@@ -36,7 +36,7 @@ class TestCoverageEdgeCases:
             follow_symlinks = bool(kwargs.get("follow_symlinks", True))
             if self.name == "dummy.yml" and follow_symlinks:
                 call_count += 1
-                if call_count >= 1:
+                if call_count >= 3:
                     raise OSError("Disk read fault")
             return orig_stat(self, follow_symlinks=follow_symlinks)
 
