@@ -50,3 +50,6 @@ dist/
 *.swo
 *~
 Thumbs.db
+
+# Local backups
+backups/
